@@ -94,7 +94,7 @@
 <div class="layout">
 <nav id="toc">
   <div class="brand">Super-Manner</div>
-  <div class="ver">PRD · v0.1 · 评审稿</div>
+  <div class="ver">PRD · v0.2 · 决定稿</div>
   <a href="#s1">1 背景与问题</a>
   <a href="#s2">2 目标与用户</a>
   <a href="#s3">3 范围</a>
@@ -112,7 +112,7 @@
   <a href="#s7">7 关键流程</a>
   <a href="#s8">8 异常与边界</a>
   <a href="#s9">9 观测与验收</a>
-  <a href="#s10">10 开放问题</a>
+  <a href="#s10">10 决策记录</a>
   <a href="#s11">11 附录</a>
 </nav>
 <main>
@@ -121,8 +121,8 @@
   <h1>Super-Manner：可授权、可验收、可自我迭代的协作 Coding Agent</h1>
   <p class="lede">架构师提交目标与验收标准，系统自行组队、分工、执行、验证，交付可审查的代码与证据；每次交付后，团队依据评测结果变强一点。</p>
   <div class="meta">
-    <span>版本 <b>v0.1（评审稿）</b></span>
-    <span>状态 <b>待评审</b></span>
+    <span>版本 <b>v0.2（决定稿）</b></span>
+    <span>状态 <b>P0 待实现</b></span>
     <span>范围 <b>P0 定义</b></span>
     <span>更新 <b>2026-11-03</b></span>
     <span>负责人 <b>[TBD]</b></span>
@@ -270,7 +270,7 @@
           <li><strong>仓库与基线</strong>（必填）：仓库标识、基线分支、禁止改动的路径。</li>
           <li><strong>验收标准</strong>（必填）：至少一条可机器或可人工判定的条件。</li>
           <li><strong>约束</strong>（选填）：依赖版本、兼容性、性能、安全、风格。</li>
-          <li><strong>预算上限</strong>（必填）：以 [TBD: token 或金额] 计。</li>
+          <li><strong>预算上限</strong>（必填）：以 token 计，金额按当前模型单价折算展示。</li>
           <li><strong>自治级别</strong>（必填，默认 A2）：见 6.2。</li>
           <li><strong>交付期限</strong>（选填）。</li>
         </ul>
@@ -322,7 +322,7 @@
       <dt>结果与状态变化</dt>
       <dd>批准后目标进入执行中，按批准范围签发授权；拒绝后目标回到草稿或终止。</dd>
       <dt>异常</dt>
-      <dd>超过 [TBD] 未确认时保持待确认，不自动开始执行。</dd>
+      <dd>超过设定时长（[TBD]）未确认时转阻塞并通知升级联系人，不自动开始执行。</dd>
     </dl>
   </div>
 </div>
@@ -832,21 +832,25 @@
   出现下列任一情况即视为不达标：需要人持续盯进度才有推进；验收时需要口头解释才能理解证据；Agent 绕开拒绝换条路继续做；复盘结论无法追溯到具体记录。
 </div>
 
-<h2 id="s10"><span class="num">10</span>开放问题</h2>
-<p>以下问题会影响实现取舍，需要在评审中定稿。未定稿前，实现按“当前倾向”执行，并保证可配置。</p>
+<h2 id="s10"><span class="num">10</span>决策记录</h2>
+<p>以下 8 项已按 v0.1 的倾向定稿，作为 P0 实现依据。若后续推翻，需在变更记录中说明理由，并同步修改受影响的 FR。</p>
 <table>
-  <thead><tr><th style="width:6%">#</th><th style="width:26%">问题</th><th style="width:32%">为什么重要</th><th style="width:20%">当前倾向</th><th>决定人</th></tr></thead>
+  <thead><tr><th style="width:6%">#</th><th style="width:24%">问题</th><th style="width:42%">决定</th><th>对实现的要求</th></tr></thead>
   <tbody>
-    <tr><td class="n">Q1</td><td>预算用什么单位</td><td>决定分配、暂停与升级的判定口径</td><td>以 token 为主，金额折算</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q2</td><td>哪些动作必须第二人确认</td><td>直接影响审批负担与风险覆盖</td><td>合并、密钥、跨仓库</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q3</td><td>默认自治级别</td><td>决定首次使用的安全边界</td><td>全局 A2，按仓库可覆盖</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q4</td><td>跨仓库目标是否共用一棵授权树</td><td>影响权限衰减与失效传播</td><td>同一目标下分仓库签发</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q5</td><td>复盘由系统主导还是人主持</td><td>决定复盘质量与人的投入</td><td>系统生成，人可补充结论</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q6</td><td>验收长期无响应如何处理</td><td>避免目标永久悬挂</td><td>提醒并保持等待，不代验收</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q7</td><td>证据与审计的保留期限</td><td>涉及存储成本与合规</td><td>与代码仓库保留策略一致</td><td>[TBD]</td></tr>
-    <tr><td class="n">Q8</td><td>房间是否接入现有 IM</td><td>决定协调层的落地形态</td><td>先内置，后续接飞书等</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q1</td><td>预算用什么单位</td><td>以 token 为主单位，金额按当前模型单价折算展示</td><td>分配、暂停与升级都按 token 判定；金额仅用于展示</td></tr>
+    <tr><td class="n">Q2</td><td>哪些动作必须第二人确认</td><td>合并、读取密钥、跨仓库写入</td><td>其余动作单人裁决；第二人须具备该仓库资格</td></tr>
+    <tr><td class="n">Q3</td><td>默认自治级别</td><td>全局默认 A2，可按仓库覆盖</td><td>新仓库继承全局值；覆盖项进入审计</td></tr>
+    <tr><td class="n">Q4</td><td>跨仓库目标是否共用授权树</td><td>同一目标下按仓库分别签发，共享目标预算</td><td>单个仓库授权失效不影响其他仓库；目标取消则全部失效</td></tr>
+    <tr><td class="n">Q5</td><td>复盘由谁主导</td><td>系统自动生成，人补充结论并确认关闭</td><td>未确认的复盘不阻塞目标完成，但进入人的待办</td></tr>
+    <tr><td class="n">Q6</td><td>验收长期无响应</td><td>提醒后保持等待，不代验收</td><td>超过设定时长转为阻塞并通知升级联系人，不自动接受</td></tr>
+    <tr><td class="n">Q7</td><td>证据与审计保留期限</td><td>与代码仓库的保留策略一致</td><td>仓库归档时证据同步归档，不单独延长</td></tr>
+    <tr><td class="n">Q8</td><td>房间是否接入现有 IM</td><td>先内置房间，预留外部 IM 适配</td><td>外部 IM 只做镜像与提醒，不承载状态</td></tr>
   </tbody>
 </table>
+<div class="callout">
+  <div class="t">定的原则</div>
+  默认值必须显式可见、可配置、可审计。配置只能改变阈值与范围，不能改变“默认拒绝、越界升级、完成看证据”这三条语义。
+</div>
 
 <h2 id="s11"><span class="num">11</span>附录</h2>
 <h3>11.1 与参考实现的取舍</h3>
@@ -881,8 +885,8 @@
 </table>
 
 <footer>
-  <p><strong>Super-Manner · 产品需求文档</strong> · v0.1 评审稿 · 2026-11-03</p>
-  <p>本文定义产品行为与边界，不包含技术架构、接口与存储设计。标注 [TBD] 的内容需在评审中确定；确定前实现须保持可配置。</p>
+  <p><strong>Super-Manner · 产品需求文档</strong> · v0.2 决定稿 · 2026-11-03</p>
+  <p>本文定义产品行为与边界，不包含技术架构、接口与存储设计。第 10 章的 8 项决策已定稿；标注 [TBD] 的数值目标与负责人待补充，确定前实现须保持可配置。</p>
 </footer>
 
 </main>
