@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Executor, ExecutorStatus } from '../domain/executor.ts';
-import { appendAudit } from '../infra/audit.ts';
+import { appendAudit, listAuditEvents } from '../infra/audit.ts';
 import { runGit } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
@@ -145,4 +145,20 @@ export async function collectEvidence(
     collectedAt,
     evidence,
   };
+}
+
+/** 从审计链取该工作项最近一次证据采集。 */
+export function getLatestEvidence(
+  db: DatabaseSync,
+  goalId: string,
+  workItemId: string,
+): EvidenceCollection | undefined {
+  const events = listAuditEvents(db, goalId);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.type !== 'verifier.evidence_collected') continue;
+    const payload = event.payload as EvidenceCollection;
+    if (payload.workItemId === workItemId) return payload;
+  }
+  return undefined;
 }

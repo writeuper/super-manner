@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { appendAudit, listAuditEvents } from '../infra/audit.ts';
+import { getLatestEvidence } from './evidence.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
 
@@ -47,29 +48,6 @@ export interface VerdictRecord {
 
 const RESULTS: VerdictResult[] = ['passed', 'failed', 'undetermined'];
 
-interface StoredEvidence {
-  id: string;
-  hash: string;
-}
-
-/** 最近一次为该工作项采集的证据 id 与哈希。 */
-function latestEvidence(db: DatabaseSync, goalId: string, workItemId: string): StoredEvidence[] {
-  const events = listAuditEvents(db, goalId);
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (!event || event.type !== 'verifier.evidence_collected') continue;
-    const payload = event.payload as {
-      workItemId?: string;
-      evidence?: Array<{ id?: string; hash?: string }>;
-    };
-    if (payload.workItemId !== workItemId) continue;
-    return (payload.evidence ?? [])
-      .filter((record) => typeof record.id === 'string' && typeof record.hash === 'string')
-      .map((record) => ({ id: String(record.id), hash: String(record.hash) }));
-  }
-  return [];
-}
-
 function summarize(verdicts: Verdict[]): VerdictRecord['summary'] {
   const passed = verdicts.filter((verdict) => verdict.result === 'passed').length;
   const failed = verdicts.filter((verdict) => verdict.result === 'failed').length;
@@ -103,7 +81,7 @@ export function recordVerdicts(
   const criteria = [...new Set([...goal.acceptance, ...item.dod])];
   const known = new Set(criteria);
   const seen = new Set<string>();
-  const evidence = latestEvidence(db, goal.id, item.id);
+  const evidence = getLatestEvidence(db, goal.id, item.id)?.evidence ?? [];
   const evidenceKeys = new Set(evidence.flatMap((record) => [record.id, record.hash]));
 
   for (const verdict of input.verdicts) {
