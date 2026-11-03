@@ -4,6 +4,7 @@ import { appendAudit, listAuditEvents } from '../infra/audit.ts';
 import { getLatestEvidence } from './evidence.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
+import { classifyVerdicts, type FailureKind } from './retries.ts';
 
 export type VerdictResult = 'passed' | 'failed' | 'undetermined';
 
@@ -44,6 +45,8 @@ export interface VerdictRecord {
     /** 全部标准都有结论且没有"不通过 / 无法判定"时才为 true。 */
     complete: boolean;
   };
+  /** 判定失败归类：不通过为实现问题，只有无法判定为验证问题。 */
+  failureKind?: FailureKind;
 }
 
 const RESULTS: VerdictResult[] = ['passed', 'failed', 'undetermined'];
@@ -117,6 +120,7 @@ export function recordVerdicts(
     evidence: verdict.evidence ?? [],
   }));
   const recordedAt = now.toISOString();
+  const failureKind = classifyVerdicts(verdicts);
   const record: VerdictRecord = {
     id: randomUUID(),
     goalId: goal.id,
@@ -124,6 +128,7 @@ export function recordVerdicts(
     recordedAt,
     verdicts,
     summary: summarize(verdicts),
+    ...(failureKind ? { failureKind } : {}),
   };
 
   appendAudit(

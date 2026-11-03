@@ -2,8 +2,49 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { ExecutorStatus } from '../domain/executor.ts';
 import { appendAudit, listAuditEvents } from '../infra/audit.ts';
 
-/** S2-06 只区分实现失败与环境失败；验证与外部失败留给 S4-04。 */
-export type FailureKind = 'implementation' | 'environment';
+/** 失败四分类：实现、验证、环境、外部；只有实现失败消耗实现者的重试次数。 */
+export type FailureKind = 'implementation' | 'verification' | 'environment' | 'external';
+
+/** 恢复策略：重试、返工、升级人工、等待外部恢复。 */
+export type RecoveryAction = 'retry' | 'rework' | 'escalate' | 'wait';
+
+export interface RecoveryStrategy {
+  kind: FailureKind;
+  countsAgainstImplementer: boolean;
+  action: RecoveryAction;
+  description: string;
+}
+
+const RECOVERY: Record<FailureKind, RecoveryStrategy> = {
+  implementation: {
+    kind: 'implementation',
+    countsAgainstImplementer: true,
+    action: 'retry',
+    description: '由实现者重试；同一原因连续失败两次转人工',
+  },
+  verification: {
+    kind: 'verification',
+    countsAgainstImplementer: false,
+    action: 'rework',
+    description: '补齐证据或重新判定，不计入实现者失败',
+  },
+  environment: {
+    kind: 'environment',
+    countsAgainstImplementer: false,
+    action: 'retry',
+    description: '环境恢复后重试，不计入实现者失败',
+  },
+  external: {
+    kind: 'external',
+    countsAgainstImplementer: false,
+    action: 'escalate',
+    description: '等待外部恢复或人工处理凭据/配额，不计入实现者失败',
+  },
+};
+
+export function recoveryFor(kind: FailureKind): RecoveryStrategy {
+  return RECOVERY[kind];
+}
 
 /** 同一原因连续失败达到该次数后转人处理，避免无限重试。 */
 export const MAX_SAME_CAUSE_FAILURES = 2;
@@ -52,7 +93,8 @@ export function assessBuilderRetry(
     if (event.type === 'builder.retry_cleared') break;
     const run = event.payload as RunFinishedPayload;
     if (run.status !== 'failed') break;
-    if (run.failureKind === 'environment') continue;
+    // 只有实现失败计入实现者次数；环境、外部与验证问题都不消耗重试额度。
+    if (run.failureKind !== undefined && run.failureKind !== 'implementation') continue;
     if (!run.causeKey) break;
     if (causeKey === undefined) {
       causeKey = run.causeKey;
@@ -115,11 +157,15 @@ export interface FailedCheck {
 const ENVIRONMENT_PATTERN =
   /reconnecting|request timed out|stream disconnected|error sending request|econnrefused|enotfound|etimedout|eai_again|network/i;
 
+/** 外部服务拒绝、凭据或配额问题；等待外部恢复或人工介入。 */
+const EXTERNAL_PATTERN =
+  /unauthorized|forbidden|invalid api key|authentication|quota|rate limit|too many requests|\b(401|403|429|502|503|504)\b|bad gateway|service unavailable|remote rejected|protected branch/i;
+
 /**
  * 从一次运行结果推导失败类型与原因键。
  *
- * 超时、无法启动与网络类退出归为环境问题，不计入实现者失败次数；
- * 其余非零退出与自检不通过归为同一类实现失败。
+ * 超时、无法启动与网络类退出归为环境问题；凭据、配额与外部服务错误归为外部问题；
+ * 两类都不计入实现者次数。其余非零退出与自检不通过归为实现失败。
  */
 export function classifyRunFailure(
   agentStatus: ExecutorStatus,
@@ -129,6 +175,9 @@ export function classifyRunFailure(
   if (agentStatus !== 'succeeded') {
     if (agentStatus !== 'failed') {
       return { failureKind: 'environment', causeKey: `agent:${agentStatus}` };
+    }
+    if (EXTERNAL_PATTERN.test(agentStderr)) {
+      return { failureKind: 'external', causeKey: 'agent:external' };
     }
     return ENVIRONMENT_PATTERN.test(agentStderr)
       ? { failureKind: 'environment', causeKey: 'agent:environment' }
@@ -143,4 +192,17 @@ export function classifyRunFailure(
         failureKind: 'environment',
         causeKey: `self-check:${check.name}:${check.status}`,
       };
+}
+
+/**
+ * 把逐条判定归类。
+ *
+ * 有"不通过"说明实现没达到标准；只有"无法判定"属于验证问题；全部通过则没有失败。
+ */
+export function classifyVerdicts(
+  verdicts: { result: string }[],
+): FailureKind | undefined {
+  if (verdicts.some((verdict) => verdict.result === 'failed')) return 'implementation';
+  if (verdicts.some((verdict) => verdict.result === 'undetermined')) return 'verification';
+  return undefined;
 }
