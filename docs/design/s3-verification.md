@@ -132,14 +132,36 @@ manner verify completion --goal <goalId> --by verifier-1
 manner verify view --goal <goalId> --out acceptance.html --by verifier-1
 ```
 
-## 7. 后续任务
+## 7. S3-06 验收决定
+
+`decideAcceptance(db, { goalId, decision, reason, actor })` 由人给出最终结论，三种决定各自对应一条状态迁移：
+
+| 决定 | 前置状态 | 结果 | 授权 |
+| --- | --- | --- | --- |
+| accept | verifying / awaiting_acceptance，且完成判定通过 | verifying → awaiting_acceptance → completed | 全部吊销 |
+| rework | verifying / awaiting_acceptance | 回到 executing，Builder 可再次运行 | 保留 |
+| close | executing / verifying / awaiting_acceptance / blocked | 走 `cancelGoal`，未决升级过期 | 全部吊销 |
+
+规则：
+
+- accept 前必须重新执行完成判定；不通过时抛出原因，状态保持不动，不允许"先接受再补证据"。
+- rework 与 close 必须写明原因，避免事后无法解释为什么退回或关闭。
+- rework 不删除历史证据与判定，只改目标状态；下一次 `builder run` 产生新的 Run，判定历史按追加顺序保留。
+- 每次决定都追加 `acceptance.decided`，payload 含决定、原因、结束状态、完成结论与吊销授权数；close 的吊销数取自取消前的活跃授权数。
+
+```bash
+manner acceptance decide --goal <goalId> --decision accept --by human-1
+manner acceptance decide --goal <goalId> --decision rework --reason "补充失败路径测试" --by human-1
+manner acceptance decide --goal <goalId> --decision close --reason "需求取消" --by human-1
+```
+
+## 8. 后续任务
 
 | 任务 | 产出 | 关键约束 |
 | --- | --- | --- |
-| S3-06 验收决定 | 接受、返工、关闭；授权失效 | 返工生成新 Run 且保留历史结论 |
 | S3-07 端到端含返工 | 一次不通过后返工并通过 | 历史证据不被覆盖 |
 
-## 8. 测试映射
+## 9. 测试映射
 
 | 任务 | 测试 |
 | --- | --- |
@@ -155,8 +177,12 @@ manner verify view --goal <goalId> --out acceptance.html --by verifier-1
 | S3-04 任一工作项未完成即阻塞目标 | `completion.test.ts` · 任一工作项缺证据或缺判定时目标不得完成 |
 | S3-05 视图汇总与可验收标注 | `acceptance-view.test.ts` · 验收视图汇总目标、差异、证据、风险与待决，并标注可验收 |
 | S3-05 未完成时列出阻塞原因 | `acceptance-view.test.ts` · 未完成时视图列出阻塞原因 |
+| S3-06 接受后完成并吊销授权 | `acceptance.test.ts` · 接受后目标完成、授权全部失效且不能再操作 |
+| S3-06 完成判定不通过不得接受 | `acceptance.test.ts` · 完成判定未通过时不能接受 |
+| S3-06 返工保留历史并产生新 Run | `acceptance.test.ts` · 返工回到执行态，历史结论保留并可产生新 Run |
+| S3-06 关闭取消目标 | `acceptance.test.ts` · 关闭目标会取消并吊销授权 |
 
-## 9. 已知边界
+## 10. 已知边界
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
@@ -167,7 +193,9 @@ manner verify view --goal <goalId> --out acceptance.html --by verifier-1
 | 证据来源 | 只重跑自检命令，不重新执行 Agent | 复杂验证由 S3-03 判定补充 |
 | 判定录入 | 由验证者（人或 Agent）产出 JSON 后写入，不在服务内自动调用模型 | S3-07 端到端可编排调用 |
 | 判定粒度 | 以标准文本为键，跨来源同文标准合并为一条 | 需要区分来源时改结构化 id |
-| 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | S3-06 由人工决定接受或返工 |
+| 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | 由 S3-06 的人工验收决定推进 |
+| 验收决定入口 | 只提供 CLI，需要人显式执行；没有推送通知或超时自动决定 | 需要时接 IM 卡片或工作流 |
+| 返工后的证据 | 返工只改状态，不清理旧证据与旧判定 | 判定按追加顺序保留，完成判定取最近一次 |
 | 证据时效 | 只要求存在证据，不校验证据是否对应最新 HEAD | 需要时在 S3-05 展示 HEAD 对比 |
 | 验收视图 | 单文件 HTML，无脚本；未跟踪文件的改动内容不展示 | 需要时内嵌完整差异或附件 |
 | 视图审计 | 只记录结论与生成时间，不保存 HTML 快照 | 需要归档时把文件纳入产物 |

@@ -25,7 +25,7 @@ Super-Manner 是一个协作式 coding agent 团队。架构师提交目标与�
 - [x] S1 治理内核：目标、授权、越界拦截、升级裁决、审计链（41 项测试通过）
 - [x] S2 隔离执行：worktree、Executor、角色实例化、Builder 运行、commit/push、失败重试（累计 91 项测试通过）
 - [x] S2 端到端：真实模型在 `feature/sm-179ad8f6-build` 上改 README 并推送，PR 人工创建
-- [ ] S3 验证与验收：证据与人工决定（S3-01 上下文、S3-02 证据、S3-03 判定、S3-04 完成判定、S3-05 验收视图已完成）
+- [ ] S3 验证与验收：证据与人工决定（S3-01 上下文、S3-02 证据、S3-03 判定、S3-04 完成判定、S3-05 验收视图、S3-06 验收决定已完成，累计 95 项测试通过）
 - [ ] S4 生命周期与归档：暂停、取消、预算与复盘
 
 ## 本地运行
@@ -45,7 +45,7 @@ pnpm manner --help
 | [P0 实现任务拆解](docs/p0-plan.md) | 按 FR 拆分的四个切片与验收场景 |
 | [S1 治理内核设计](docs/design/s1-governance.md) | 分层、状态机、授权判定、网关流程、CLI 与测试映射 |
 | [S2 隔离执行设计](docs/design/s2-execution.md) | worktree 隔离、执行器契约、角色 playbook、Builder 运行与提交/推送 |
-| [S3 验证与验收设计](docs/design/s3-verification.md) | 独立上下文、证据、逐条判定、完成判定与验收视图 |
+| [S3 验证与验收设计](docs/design/s3-verification.md) | 独立上下文、证据、逐条判定、完成判定、验收视图与验收决定 |
 
 ## 术语
 

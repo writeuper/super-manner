@@ -16,6 +16,7 @@ import { collectEvidence } from './app/evidence.ts';
 import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { assessCompletion } from './app/completion.ts';
 import { buildAcceptanceView } from './app/acceptance-view.ts';
+import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -162,6 +163,7 @@ const USAGE = `Super-Manner CLI
   manner verify judge --goal <id> --item <workItemId> --file verdicts.json [--by <id>]
   manner verify completion --goal <id> [--by <id>]
   manner verify view --goal <id> [--out <file>] [--by <id>]
+  manner acceptance decide --goal <id> --decision accept|rework|close [--reason <text>] --by <id>
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -421,6 +423,25 @@ async function main(): Promise<void> {
           mkdirSync(dirname(out), { recursive: true });
           writeFileSync(out, view.html, 'utf8');
           print({ goalId: view.goalId, complete: view.complete, generatedAt: view.generatedAt, out });
+          return;
+        }
+        break;
+      }
+
+      case 'acceptance': {
+        if (subcommand === 'decide') {
+          const decision = required(args, 'decision');
+          if (decision !== 'accept' && decision !== 'rework' && decision !== 'close') {
+            throw new Error(`未知验收决定：${decision}`);
+          }
+          print(
+            decideAcceptance(db, {
+              goalId: required(args, 'goal'),
+              decision: decision as AcceptanceDecision,
+              reason: one(args, 'reason'),
+              actor: required(args, 'by'),
+            }),
+          );
           return;
         }
         break;
