@@ -155,11 +155,22 @@ manner acceptance decide --goal <goalId> --decision rework --reason "补充失�
 manner acceptance decide --goal <goalId> --decision close --reason "需求取消" --by human-1
 ```
 
-## 8. 后续任务
+## 8. S3-07 端到端含返工
 
-| 任务 | 产出 | 关键约束 |
+`test/e2e-rework.test.ts` 在同一个目标上串起完整闭环，验证返工不会覆盖历史：
+
+| 阶段 | 动作 | 期望 |
 | --- | --- | --- |
-| S3-07 端到端含返工 | 一次不通过后返工并通过 | 历史证据不被覆盖 |
+| 第一轮执行 | `builder run` 写入实现 | 产生第 1 个 Run |
+| 第一轮验证 | `collectEvidence` + `recordVerdicts`（1 条不通过、1 条无法判定） | 完成判定阻塞并给出原因 |
+| 返工 | `decideAcceptance(rework)` | 目标回到 executing，证据与判定保留 |
+| 第二轮执行 | 再次 `builder run`，不重建工作区 | 复用同一 worktree，产生第 2 个 Run |
+| 第二轮验证 | 重新采集证据并全部判定通过 | 完成判定通过 |
+| 验收 | `decideAcceptance(accept)` | 目标 completed，授权全部吊销 |
+
+断言直接读审计链：两轮各自留下 `verifier.evidence_collected` 与
+`verifier.verdicts_recorded`，第一轮的"不通过 / 无法判定"仍在；`getLatestEvidence` /
+`getLatestVerdicts` 取到第二轮记录，说明历史只追加、不覆盖。
 
 ## 9. 测试映射
 
@@ -181,6 +192,7 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | S3-06 完成判定不通过不得接受 | `acceptance.test.ts` · 完成判定未通过时不能接受 |
 | S3-06 返工保留历史并产生新 Run | `acceptance.test.ts` · 返工回到执行态，历史结论保留并可产生新 Run |
 | S3-06 关闭取消目标 | `acceptance.test.ts` · 关闭目标会取消并吊销授权 |
+| S3-07 返工闭环 | `e2e-rework.test.ts` · 一次不通过后返工并通过，历史证据不被覆盖 |
 
 ## 10. 已知边界
 
@@ -198,4 +210,5 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | 返工后的证据 | 返工只改状态，不清理旧证据与旧判定 | 判定按追加顺序保留，完成判定取最近一次 |
 | 证据时效 | 只要求存在证据，不校验证据是否对应最新 HEAD | 需要时在 S3-05 展示 HEAD 对比 |
 | 验收视图 | 单文件 HTML，无脚本；未跟踪文件的改动内容不展示 | 需要时内嵌完整差异或附件 |
+| 返工闭环 | 由测试串起 `builder run` / 验证 / 验收决定，CLI 仍是分步入口 | 需要时补一键脚本 |
 | 视图审计 | 只记录结论与生成时间，不保存 HTML 快照 | 需要归档时把文件纳入产物 |
