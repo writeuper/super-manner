@@ -37,6 +37,28 @@ pnpm test
 pnpm manner --help
 ```
 
+## Builder 快速开始
+
+将 `<goalId>`、`<repo>`、`<worktree-root>` 替换为实际值，并按以下顺序执行：
+
+```bash
+# 1. 为工作项创建隔离 worktree
+pnpm manner workspace create --goal <goalId> --item build --repo-dir <repo> \
+  --worktree-root <worktree-root> --by builder-1
+
+# 2. 运行 Builder
+pnpm manner builder run --goal <goalId> --item build --repo-dir <repo> --by builder-1
+
+# 3. 提交 Builder 的改动
+pnpm manner builder commit --goal <goalId> --item build --message "feat: ..." --by builder-1
+
+# 4. 推送 Builder 分支（PR 仍由人工创建）
+pnpm manner builder push --goal <goalId> --item build --by builder-1
+
+# 5. 人工接手后重置重试计数（保留历史失败与证据）
+pnpm manner builder reset --goal <goalId> --item build --reason "已调整方案" --by human
+```
+
 ## 文档
 
 | 文档 | 说明 |
