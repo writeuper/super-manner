@@ -22,7 +22,15 @@ export interface GatewayOptions {
   escalationTtlMs?: number;
 }
 
-const BLOCKED_STATUSES = new Set(['draft', 'pending_confirmation', 'blocked', 'completed', 'cancelled', 'failed']);
+const BLOCKED_STATUSES = new Set([
+  'draft',
+  'pending_confirmation',
+  'blocked',
+  'paused',
+  'completed',
+  'cancelled',
+  'failed',
+]);
 
 /**
  * 所有动作请求的唯一入口。

@@ -9,6 +9,7 @@ import { listChangedFiles, runGit } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { getGoalOrThrow } from './goals.ts';
+import { assessRepeatWrite, recordCheckpoint } from './checkpoints.ts';
 import { requestAction } from './gateway.ts';
 import { getApprovedPlan } from './plans.ts';
 import { instantiateRole, type RoleInstance } from './roles.ts';
@@ -59,7 +60,7 @@ export interface SelfCheckResult {
   stderr: string;
 }
 
-export type BuilderRunStatus = 'denied' | 'blocked' | 'succeeded' | 'failed';
+export type BuilderRunStatus = 'denied' | 'blocked' | 'skipped' | 'succeeded' | 'failed';
 
 export interface BuilderRunResult {
   runId: string;
@@ -147,6 +148,14 @@ export function detectSelfChecks(workspacePath: string): SelfCheckSpec[] {
   return checks;
 }
 
+/** 从检查点里取出上次写操作涉及的文件，跳过时仍能报告产物。 */
+function checkpointFiles(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const record = payload as { changedFiles?: unknown; files?: unknown };
+  const files = Array.isArray(record.changedFiles) ? record.changedFiles : record.files;
+  return Array.isArray(files) ? files.filter((file): file is string => typeof file === 'string') : [];
+}
+
 /**
  * 运行一次 Builder。
  *
@@ -187,6 +196,45 @@ export async function runBuilder(
 
   const runId = randomUUID();
   const retry = assessBuilderRetry(db, goal.id, item.id);
+
+  // 暂停恢复后，已完成的写操作不再重放；返工（不通过判定或验收返工）会解除跳过。
+  const repeat = assessRepeatWrite(db, goal.id, item.id);
+  if (repeat.skip && repeat.checkpoint) {
+    const reason = repeat.reason ?? '工作项已完成写操作，跳过重复执行';
+    appendAudit(
+      db,
+      {
+        actor: input.actor ?? role.subject,
+        type: 'builder.run_skipped',
+        goalId: goal.id,
+        subject: role.subject,
+        payload: {
+          runId,
+          workItemId: item.id,
+          checkpointId: repeat.checkpoint.id,
+          checkpointKind: repeat.checkpoint.kind,
+          reason,
+        },
+      },
+      now.toISOString(),
+    );
+    return {
+      runId,
+      status: 'skipped',
+      reason,
+      goalId: goal.id,
+      workItemId: item.id,
+      workspaceId: workspace.id,
+      branch: workspace.branch,
+      role,
+      agent: null,
+      selfChecks: [],
+      changedFiles: checkpointFiles(repeat.checkpoint.payload),
+      diffStat: '',
+      retry,
+    };
+  }
+
   if (retry.blocked) {
     appendAudit(
       db,
@@ -367,6 +415,21 @@ export async function runBuilder(
     },
     finishedAt,
   );
+
+  if (status === 'succeeded') {
+    recordCheckpoint(db, {
+      goalId: goal.id,
+      workItemId: item.id,
+      kind: 'builder_run',
+      runId,
+      payload: {
+        workspaceId: workspace.id,
+        branch: workspace.branch,
+        changedFiles,
+        diffStat,
+      },
+    });
+  }
 
   return {
     runId,

@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { cancelGoal, createGoal, getGoalOrThrow } from './app/goals.ts';
+import { cancelGoal, createGoal, getGoalOrThrow, pauseGoal, resumeGoal } from './app/goals.ts';
 import { approvePlan, rejectPlan, submitPlan, type SubmitPlanInput } from './app/plans.ts';
 import { decideEscalation, sweepExpiredEscalations } from './app/escalations.ts';
 import { requestAction } from './app/gateway.ts';
@@ -17,6 +17,7 @@ import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { assessCompletion } from './app/completion.ts';
 import { buildAcceptanceView } from './app/acceptance-view.ts';
 import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
+import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -143,6 +144,9 @@ const USAGE = `Super-Manner CLI
                   [--budget 100000] [--autonomy A2] [--by <id>]
   manner goal show <goalId>
   manner goal cancel <goalId> --by <id>
+  manner goal pause <goalId> --by <id> [--reason <text>]
+  manner goal resume <goalId> --by <id> [--reason <text>]
+  manner checkpoint list --goal <goalId>
   manner plan submit <goalId> --file plan.json --by <id>
   manner plan approve <planId> --by <id>
   manner plan reject <planId> --by <id> --reason <text>
@@ -213,6 +217,14 @@ async function main(): Promise<void> {
         }
         if (subcommand === 'cancel' && third) {
           print(cancelGoal(db, third, required(args, 'by')));
+          return;
+        }
+        if (subcommand === 'pause' && third) {
+          print(pauseGoal(db, third, required(args, 'by'), one(args, 'reason') ?? ''));
+          return;
+        }
+        if (subcommand === 'resume' && third) {
+          print(resumeGoal(db, third, required(args, 'by'), one(args, 'reason') ?? ''));
           return;
         }
         break;
@@ -495,6 +507,14 @@ async function main(): Promise<void> {
               resource,
             }),
           );
+          return;
+        }
+        break;
+      }
+
+      case 'checkpoint': {
+        if (subcommand === 'list') {
+          print(getGoalCheckpoints(db, required(args, 'goal')));
           return;
         }
         break;

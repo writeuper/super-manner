@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { assertGoalTransition, isTerminalGoal } from '../domain/state.ts';
-import type { CreateGoalInput, Goal } from '../domain/types.ts';
+import type { CreateGoalInput, Goal, GoalStatus } from '../domain/types.ts';
 import { randomUUID } from 'node:crypto';
 import { appendAudit } from '../infra/audit.ts';
 import {
@@ -11,6 +11,11 @@ import {
   updateEscalation,
   updateGoal,
 } from '../infra/store.ts';
+import {
+  getGoalCheckpoints,
+  summarizeCheckpoints,
+  type CheckpointSummary,
+} from './checkpoints.ts';
 
 export function validateGoal(input: CreateGoalInput): string[] {
   const missing: string[] = [];
@@ -112,4 +117,95 @@ export function cancelGoal(db: DatabaseSync, goalId: string, actor: string, now 
   updateGoal(db, updated);
   appendAudit(db, { actor, type: 'goal.cancelled', goalId, payload: { revokedGrants: revoked } }, at);
   return updated;
+}
+
+/** 允许暂停的阶段：执行、验证、等待人工裁决；验收决定阶段直接给结论，不暂停。 */
+const PAUSABLE_STATUSES: GoalStatus[] = ['executing', 'verifying', 'blocked'];
+
+export interface GoalLifecycleResult {
+  goal: Goal;
+  from: GoalStatus;
+  to: GoalStatus;
+  /** 暂停时已完成的写操作；恢复后据此跳过重复执行。 */
+  completedWrites: CheckpointSummary[];
+}
+
+/**
+ * 暂停目标。
+ *
+ * 只改目标状态，不吊销授权：暂停是可恢复的，恢复后沿用原授权；
+ * 网关会把 paused 视为不可执行，因此暂停期间的写请求全部拒绝。
+ */
+export function pauseGoal(
+  db: DatabaseSync,
+  goalId: string,
+  actor: string,
+  reason = '',
+  now = new Date(),
+): GoalLifecycleResult {
+  const goal = getGoalOrThrow(db, goalId);
+  if (goal.status === 'paused') throw new Error('目标已处于暂停状态');
+  if (!PAUSABLE_STATUSES.includes(goal.status)) {
+    throw new Error(`目标当前状态不能暂停：${goal.status}`);
+  }
+
+  const at = now.toISOString();
+  const completedWrites = summarizeCheckpoints(getGoalCheckpoints(db, goalId));
+  const updated: Goal = {
+    ...goal,
+    status: 'paused',
+    pausedFrom: goal.status,
+    updatedAt: at,
+  };
+  updateGoal(db, updated);
+  appendAudit(
+    db,
+    {
+      actor,
+      type: 'goal.paused',
+      goalId,
+      payload: { from: goal.status, reason, completedWrites },
+    },
+    at,
+  );
+
+  return { goal: updated, from: goal.status, to: 'paused', completedWrites };
+}
+
+/**
+ * 恢复目标到暂停前的阶段。
+ *
+ * 恢复本身不重放任何动作；已完成的写操作由检查点标记，
+ * Builder 再次被调用时会直接返回跳过，不重复改动工作区。
+ */
+export function resumeGoal(
+  db: DatabaseSync,
+  goalId: string,
+  actor: string,
+  reason = '',
+  now = new Date(),
+): GoalLifecycleResult {
+  const goal = getGoalOrThrow(db, goalId);
+  if (goal.status !== 'paused' || !goal.pausedFrom) {
+    throw new Error(`目标当前状态不能恢复：${goal.status}`);
+  }
+
+  const at = now.toISOString();
+  const target = goal.pausedFrom;
+  assertGoalTransition('paused', target);
+  const completedWrites = summarizeCheckpoints(getGoalCheckpoints(db, goalId));
+  const updated: Goal = { ...goal, status: target, pausedFrom: undefined, updatedAt: at };
+  updateGoal(db, updated);
+  appendAudit(
+    db,
+    {
+      actor,
+      type: 'goal.resumed',
+      goalId,
+      payload: { from: 'paused', to: target, reason, completedWrites },
+    },
+    at,
+  );
+
+  return { goal: updated, from: 'paused', to: target, completedWrites };
 }

@@ -5,6 +5,7 @@ import { listChangedFiles, runGit, runGitOrThrow } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { getGoalOrThrow } from './goals.ts';
+import { recordCheckpoint } from './checkpoints.ts';
 import { requestAction } from './gateway.ts';
 import { getApprovedPlan } from './plans.ts';
 import { instantiateRole } from './roles.ts';
@@ -178,6 +179,13 @@ export function commitWorkspace(
     new Date().toISOString(),
   );
 
+  recordCheckpoint(db, {
+    goalId: context.goal.id,
+    workItemId: context.item.id,
+    kind: 'commit',
+    payload: { sha, branch: context.branch, files: files.slice(0, 50), message },
+  });
+
   return {
     status: 'committed',
     goalId: context.goal.id,
@@ -264,6 +272,15 @@ export function pushWorkspace(
     },
     new Date().toISOString(),
   );
+
+  if (status === 'pushed') {
+    recordCheckpoint(db, {
+      goalId: context.goal.id,
+      workItemId: context.item.id,
+      kind: 'push',
+      payload: { remote, branch: context.branch },
+    });
+  }
 
   return {
     status,

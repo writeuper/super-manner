@@ -143,5 +143,28 @@ function migrate(db: DatabaseSync): void {
     `);
 
     db.exec('PRAGMA user_version = 2;');
+    version = 2;
+  }
+
+  if (version < 3) {
+    db.exec(`
+      ALTER TABLE goals ADD COLUMN paused_from TEXT;
+
+      CREATE TABLE IF NOT EXISTS checkpoints (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL,
+        work_item_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        run_id TEXT,
+        audit_id TEXT,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_checkpoints_item
+        ON checkpoints(goal_id, work_item_id, created_at);
+    `);
+
+    db.exec('PRAGMA user_version = 3;');
   }
 }

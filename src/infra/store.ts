@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   Approval,
+  Checkpoint,
   Escalation,
   EscalationStatus,
   Goal,
@@ -46,6 +47,7 @@ function goalFromRow(row: Row): Goal {
     budgetTokens: Number(row.budget_tokens),
     autonomy: String(row.autonomy) as Goal['autonomy'],
     status: String(row.status) as Goal['status'],
+    pausedFrom: optionalString(row.paused_from) as Goal['pausedFrom'],
     missing: parse<string[]>(row.missing),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -55,8 +57,8 @@ function goalFromRow(row: Row): Goal {
 export function insertGoal(db: DatabaseSync, goal: Goal): void {
   db.prepare(
     `INSERT INTO goals (id, title, description, repo, base_branch, acceptance, constraints,
-      budget_tokens, autonomy, status, missing, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      budget_tokens, autonomy, status, paused_from, missing, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     goal.id,
     goal.title,
@@ -68,6 +70,7 @@ export function insertGoal(db: DatabaseSync, goal: Goal): void {
     goal.budgetTokens,
     goal.autonomy,
     goal.status,
+    goal.pausedFrom ?? null,
     JSON.stringify(goal.missing),
     goal.createdAt,
     goal.updatedAt,
@@ -77,7 +80,7 @@ export function insertGoal(db: DatabaseSync, goal: Goal): void {
 export function updateGoal(db: DatabaseSync, goal: Goal): void {
   db.prepare(
     `UPDATE goals SET title = ?, description = ?, repo = ?, base_branch = ?, acceptance = ?,
-      constraints = ?, budget_tokens = ?, autonomy = ?, status = ?, missing = ?, updated_at = ?
+      constraints = ?, budget_tokens = ?, autonomy = ?, status = ?, paused_from = ?, missing = ?, updated_at = ?
      WHERE id = ?`,
   ).run(
     goal.title,
@@ -89,6 +92,7 @@ export function updateGoal(db: DatabaseSync, goal: Goal): void {
     goal.budgetTokens,
     goal.autonomy,
     goal.status,
+    goal.pausedFrom ?? null,
     JSON.stringify(goal.missing),
     goal.updatedAt,
     goal.id,
@@ -445,4 +449,57 @@ export function markWorkspaceRemoved(db: DatabaseSync, id: string, at: string): 
     .prepare("UPDATE workspaces SET status = 'removed', removed_at = ? WHERE id = ? AND status = 'active'")
     .run(at, id);
   return Number(result.changes);
+}
+
+// ---------- Checkpoint ----------
+
+function checkpointFromRow(row: Row): Checkpoint {
+  return {
+    id: String(row.id),
+    goalId: String(row.goal_id),
+    workItemId: String(row.work_item_id),
+    kind: String(row.kind) as Checkpoint['kind'],
+    runId: optionalString(row.run_id),
+    auditId: optionalString(row.audit_id),
+    payload: parse<unknown>(row.payload),
+    createdAt: String(row.created_at),
+  };
+}
+
+export function insertCheckpoint(db: DatabaseSync, checkpoint: Checkpoint): void {
+  db.prepare(
+    `INSERT INTO checkpoints (id, goal_id, work_item_id, kind, run_id, audit_id, payload, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    checkpoint.id,
+    checkpoint.goalId,
+    checkpoint.workItemId,
+    checkpoint.kind,
+    checkpoint.runId ?? null,
+    checkpoint.auditId ?? null,
+    JSON.stringify(checkpoint.payload ?? null),
+    checkpoint.createdAt,
+  );
+}
+
+export function listCheckpointsForGoal(db: DatabaseSync, goalId: string): Checkpoint[] {
+  return (
+    db
+      .prepare('SELECT * FROM checkpoints WHERE goal_id = ? ORDER BY created_at ASC, rowid ASC')
+      .all(goalId) as Row[]
+  ).map(checkpointFromRow);
+}
+
+export function listCheckpointsForItem(
+  db: DatabaseSync,
+  goalId: string,
+  workItemId: string,
+): Checkpoint[] {
+  return (
+    db
+      .prepare(
+        'SELECT * FROM checkpoints WHERE goal_id = ? AND work_item_id = ? ORDER BY created_at ASC, rowid ASC',
+      )
+      .all(goalId, workItemId) as Row[]
+  ).map(checkpointFromRow);
 }

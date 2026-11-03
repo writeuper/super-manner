@@ -9,9 +9,10 @@ import type { GoalStatus, PlanStatus } from './types.ts';
 const GOAL_TRANSITIONS: Record<GoalStatus, readonly GoalStatus[]> = {
   draft: ['pending_confirmation', 'cancelled'],
   pending_confirmation: ['executing', 'draft', 'cancelled'],
-  executing: ['verifying', 'blocked', 'cancelled', 'failed'],
-  blocked: ['executing', 'cancelled', 'failed'],
-  verifying: ['awaiting_acceptance', 'executing', 'blocked', 'cancelled', 'failed'],
+  executing: ['verifying', 'blocked', 'paused', 'cancelled', 'failed'],
+  blocked: ['executing', 'paused', 'cancelled', 'failed'],
+  verifying: ['awaiting_acceptance', 'executing', 'blocked', 'paused', 'cancelled', 'failed'],
+  paused: ['executing', 'verifying', 'blocked', 'cancelled'],
   awaiting_acceptance: ['completed', 'executing', 'cancelled'],
   completed: [],
   cancelled: [],

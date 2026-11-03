@@ -11,6 +11,7 @@ export type GoalStatus =
   | 'verifying'
   | 'awaiting_acceptance'
   | 'blocked'
+  | 'paused'
   | 'completed'
   | 'cancelled'
   | 'failed';
@@ -88,6 +89,8 @@ export interface Goal {
   budgetTokens: number;
   autonomy: AutonomyLevel;
   status: GoalStatus;
+  /** 暂停前的状态，用于恢复到原来的阶段；非 paused 时为空。 */
+  pausedFrom?: GoalStatus;
   missing: string[];
   createdAt: string;
   updatedAt: string;
@@ -188,6 +191,21 @@ export interface Workspace {
   status: WorkspaceStatus;
   createdAt: string;
   removedAt?: string;
+}
+
+/** 检查点只记录已经完成的写操作，用于暂停恢复时避免重复执行。 */
+export type CheckpointKind = 'builder_run' | 'commit' | 'push';
+
+export interface Checkpoint {
+  id: string;
+  goalId: string;
+  workItemId: string;
+  kind: CheckpointKind;
+  runId?: string;
+  /** 对应的审计事件 id；判断检查点之后是否出现返工或不通过。 */
+  auditId?: string;
+  payload: unknown;
+  createdAt: string;
 }
 
 export interface CreateGoalInput {
