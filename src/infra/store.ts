@@ -7,6 +7,7 @@ import type {
   Goal,
   Grant,
   Plan,
+  TokenUsage,
   Workspace,
   WorkspaceStatus,
 } from '../domain/types.ts';
@@ -502,4 +503,37 @@ export function listCheckpointsForItem(
       )
       .all(goalId, workItemId) as Row[]
   ).map(checkpointFromRow);
+}
+
+// ---------- Token usage ----------
+
+export function insertTokenUsage(db: DatabaseSync, usage: TokenUsage): void {
+  db.prepare(
+    `INSERT INTO token_usage (id, goal_id, work_item_id, run_id, source, tokens, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    usage.id,
+    usage.goalId,
+    usage.workItemId ?? null,
+    usage.runId ?? null,
+    usage.source,
+    usage.tokens,
+    usage.createdAt,
+  );
+}
+
+export function listTokenUsageForGoal(db: DatabaseSync, goalId: string): TokenUsage[] {
+  return (
+    db
+      .prepare('SELECT * FROM token_usage WHERE goal_id = ? ORDER BY created_at ASC, rowid ASC')
+      .all(goalId) as Row[]
+  ).map((row) => ({
+    id: String(row.id),
+    goalId: String(row.goal_id),
+    workItemId: optionalString(row.work_item_id),
+    runId: optionalString(row.run_id),
+    source: String(row.source) as TokenUsage['source'],
+    tokens: Number(row.tokens),
+    createdAt: String(row.created_at),
+  }));
 }

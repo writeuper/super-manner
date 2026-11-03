@@ -18,6 +18,7 @@ import { assessCompletion } from './app/completion.ts';
 import { buildAcceptanceView } from './app/acceptance-view.ts';
 import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { getGoalCheckpoints } from './app/checkpoints.ts';
+import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -147,6 +148,9 @@ const USAGE = `Super-Manner CLI
   manner goal pause <goalId> --by <id> [--reason <text>]
   manner goal resume <goalId> --by <id> [--reason <text>]
   manner checkpoint list --goal <goalId>
+  manner budget status --goal <goalId>
+  manner budget record --goal <goalId> --tokens <n> [--item <id>] [--source builder_run|verification|other] [--by <id>]
+  manner budget extend --goal <goalId> --tokens <n> --by <id>
   manner plan submit <goalId> --file plan.json --by <id>
   manner plan approve <planId> --by <id>
   manner plan reject <planId> --by <id> --reason <text>
@@ -157,7 +161,7 @@ const USAGE = `Super-Manner CLI
   manner workspace cleanup <workspaceId> [--delete-branch] [--force] [--by <id>]
   manner role instantiate --goal <id> --item <workItemId> [--by <id>]
   manner builder run --goal <id> --item <workItemId> [--repo-dir <path>] [--worktree-root <dir>]
-                     [--agent codex] [--agent-arg <arg> ...] [--timeout <ms>] [--by <id>]
+                     [--agent codex] [--agent-arg <arg> ...] [--timeout <ms>] [--tokens <n>] [--by <id>]
                      （参数本身以 -- 开头时写成 --agent-arg=--sandbox）
   manner builder commit --goal <id> --item <workItemId> [--message <text>] [--by <id>]
   manner builder push --goal <id> --item <workItemId> [--remote origin] [--by <id>]
@@ -342,6 +346,7 @@ async function main(): Promise<void> {
                     : [],
               ...(timeoutMs === undefined ? {} : { timeoutMs }),
             },
+            tokenUsage: Number(one(args, 'tokens') ?? 0),
             actor: one(args, 'by'),
           });
           printBuilderRun(result);
@@ -515,6 +520,35 @@ async function main(): Promise<void> {
       case 'checkpoint': {
         if (subcommand === 'list') {
           print(getGoalCheckpoints(db, required(args, 'goal')));
+          return;
+        }
+        break;
+      }
+
+      case 'budget': {
+        const goalId = required(args, 'goal');
+        if (subcommand === 'status') {
+          print(getBudgetStatus(db, goalId));
+          return;
+        }
+        if (subcommand === 'record') {
+          const source = one(args, 'source') ?? 'other';
+          if (source !== 'builder_run' && source !== 'verification' && source !== 'other') {
+            throw new Error(`未知的用量来源：${source}`);
+          }
+          print(
+            recordTokenUsage(db, {
+              goalId,
+              workItemId: one(args, 'item'),
+              source,
+              tokens: Number(required(args, 'tokens')),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'extend') {
+          print(extendBudget(db, goalId, Number(required(args, 'tokens')), required(args, 'by')));
           return;
         }
         break;

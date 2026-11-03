@@ -10,6 +10,7 @@ import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { assessRepeatWrite, recordCheckpoint } from './checkpoints.ts';
+import { recordTokenUsage } from './budget.ts';
 import { requestAction } from './gateway.ts';
 import { getApprovedPlan } from './plans.ts';
 import { instantiateRole, type RoleInstance } from './roles.ts';
@@ -48,6 +49,8 @@ export interface BuilderRunInput {
   agent?: AgentInvocation;
   /** 不传时按工作区里的 package.json 自动探测类型检查与测试。 */
   selfChecks?: SelfCheckSpec[];
+  /** Agent 报告的 token 用量；0 或未提供时不计量。 */
+  tokenUsage?: number;
   actor?: string;
 }
 
@@ -415,6 +418,21 @@ export async function runBuilder(
     },
     finishedAt,
   );
+
+  if (input.tokenUsage && input.tokenUsage > 0) {
+    recordTokenUsage(
+      db,
+      {
+        goalId: goal.id,
+        workItemId: item.id,
+        runId,
+        source: 'builder_run',
+        tokens: input.tokenUsage,
+        actor: input.actor ?? role.subject,
+      },
+      new Date(),
+    );
+  }
 
   if (status === 'succeeded') {
     recordCheckpoint(db, {

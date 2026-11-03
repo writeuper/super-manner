@@ -208,6 +208,19 @@ export interface Checkpoint {
   createdAt: string;
 }
 
+/** 预算消耗记录：P0 只计量 token，不折算金额。 */
+export type UsageSource = 'builder_run' | 'verification' | 'other';
+
+export interface TokenUsage {
+  id: string;
+  goalId: string;
+  workItemId?: string;
+  runId?: string;
+  source: UsageSource;
+  tokens: number;
+  createdAt: string;
+}
+
 export interface CreateGoalInput {
   title: string;
   description?: string;

@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { appendAudit } from '../infra/audit.ts';
 import { listEscalations } from '../infra/store.ts';
 import { computeCompletion } from './completion.ts';
+import { getBudgetStatus } from './budget.ts';
 import { getLatestEvidence, type EvidenceRecord } from './evidence.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
@@ -103,6 +104,7 @@ export function buildAcceptanceView(
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能生成验收视图');
   const assessment = computeCompletion(db, goal.id, now);
+  const budget = getBudgetStatus(db, goal.id);
   const pendingEscalations = listEscalations(db, 'pending')
     .filter((escalation) => escalation.goalId === goal.id)
     .map((escalation) => `待裁决：${escalation.action} · ${escalation.reason}`);
@@ -178,7 +180,7 @@ export function buildAcceptanceView(
 <p class="muted">${escapeHtml(goal.description)}</p>
 <p>仓库 <code>${escapeHtml(goal.repo)}</code> · 基线 <code>${escapeHtml(goal.baseBranch)}</code> · 自治 ${
     escapeHtml(goal.autonomy)
-  } · 预算 ${goal.budgetTokens} tokens</p>
+  } · 预算 ${budget.usedTokens} / ${goal.budgetTokens} tokens</p>
 
 ${banner}
 

@@ -3,6 +3,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { getGoalCheckpoints } from '../src/app/checkpoints.ts';
+import { getBudgetStatus } from '../src/app/budget.ts';
 import { commitWorkspace, pushWorkspace } from '../src/app/delivery.ts';
 import {
   cancelGoal,
@@ -250,4 +251,35 @@ test('取消目标会级联停止授权、升级与后续运行', async () => {
   });
   assert.equal(denied.outcome, 'denied');
   assert.match(denied.reason, /cancelled/);
+});
+
+test('Builder 记录 token 用量，耗尽时暂停升级但不压缩验证', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const executor = new FakeExecutor((request) => {
+    if (request.command === 'fake-agent') {
+      writeFileSync(join(request.cwd as string, 'src', 'login.ts'), 'export const login = true;\n');
+    }
+    return {};
+  });
+  const input = builderInput(goal.id, executor, repo.repoDir, join(repo.root, 'worktrees'));
+
+  const result = await runBuilder(db, { ...input, tokenUsage: 2100 });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(getGoalOrThrow(db, goal.id).status, 'paused');
+  assert.equal(getBudgetStatus(db, goal.id).exhausted, true);
+
+  const pending = listEscalations(db, 'pending').filter((item) => item.goalId === goal.id);
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]?.action, 'spend.tokens');
+
+  // 预算耗尽不跳过验证：逐条判定仍可正常记录。
+  const criteria = [...defaultGoal().acceptance, ...builderItem().dod];
+  const verdicts = recordVerdicts(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    verdicts: criteria.map((criterion) => ({ criterion, result: 'passed', note: '核对通过' })),
+  });
+  assert.equal(verdicts.verdicts.length, criteria.length);
 });

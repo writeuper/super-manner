@@ -166,5 +166,24 @@ function migrate(db: DatabaseSync): void {
     `);
 
     db.exec('PRAGMA user_version = 3;');
+    version = 3;
+  }
+
+  if (version < 4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS token_usage (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL,
+        work_item_id TEXT,
+        run_id TEXT,
+        source TEXT NOT NULL,
+        tokens INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_token_usage_goal ON token_usage(goal_id, created_at);
+    `);
+
+    db.exec('PRAGMA user_version = 4;');
   }
 }

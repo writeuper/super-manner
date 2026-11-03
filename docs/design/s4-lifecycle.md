@@ -86,3 +86,49 @@ manner checkpoint list --goal <goalId>
 | 用例 | 验证点 |
 | --- | --- |
 | 取消目标会级联停止授权、升级与后续运行 | 授权全吊销、升级过期、`pausedFrom` 清空、Builder/commit/push 均被拒绝且 Agent 未被调用 |
+
+## 4. S4-03 预算计量
+
+P0 只按 token 计量，不折算金额：价格随模型与渠道变化，折算结果不可审计，因此金额不在本轮计算。
+
+### 4.1 计量口径
+
+`token_usage` 表按目标累计，来源固定为 `builder_run`、`verification`、`other`：
+
+| 入口 | 来源 | 说明 |
+| --- | --- | --- |
+| `builder run --tokens <n>` | `builder_run` | Agent 自报用量，记在该次 Run 上 |
+| `budget record --source verification` | `verification` | 验证侧补记 |
+| `budget record --source other` | `other` | 人工补记 |
+
+结算发生在动作之后：本轮已经产生的消耗不会被回滚。每次记录都写 `budget.consumed` 审计，
+包含本次与累计用量，目标结束前可完整还原。
+
+### 4.2 耗尽处理
+
+累计用量达到目标预算时：
+
+1. 若目标处于 `executing` / `verifying` / `blocked`，暂停目标（复用 S4-01，保留 `pausedFrom`）；
+2. 创建一条 `spend.tokens` 升级，选项为"追加预算并恢复 / 取消目标"；
+3. 写 `budget.exhausted` 审计。
+
+升级与暂停都是幂等的：后续补记用量不会重复暂停或重复建卡。恢复不是自动的——
+人工需 `budget extend` 追加预算后显式 `goal resume`。验证与验收不因预算耗尽被跳过或压缩，
+验收视图展示已用 / 预算 token 数，仅作展示。
+
+### 4.3 CLI
+
+```bash
+manner budget status --goal <goalId>
+manner budget record --goal <goalId> --tokens <n> [--item <id>] [--source builder_run|verification|other] [--by <id>]
+manner budget extend --goal <goalId> --tokens <n> --by <id>
+```
+
+### 4.4 测试映射
+
+| 用例 | 验证点 |
+| --- | --- |
+| 预算内累计 token 用量，不改变目标状态 | 累计值、剩余额度与审计条数正确 |
+| 预算耗尽暂停目标并创建一个 spend.tokens 升级 | 目标暂停、升级唯一、重复记录不重复暂停 |
+| 追加预算后可恢复执行，验证不受预算限制 | 预算上限提高、恢复到执行态、非法用量被拒绝 |
+| Builder 记录 token 用量，耗尽时暂停升级但不压缩验证 | Run 正常结束、目标暂停、判定仍可记录 |
