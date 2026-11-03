@@ -12,6 +12,7 @@ import { commitWorkspace, pushWorkspace } from './app/delivery.ts';
 import { resetBuilderRetry } from './app/retries.ts';
 import { buildVerifierContext } from './app/verification.ts';
 import { collectEvidence } from './app/evidence.ts';
+import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -155,6 +156,7 @@ const USAGE = `Super-Manner CLI
   manner builder reset --goal <id> --item <workItemId> [--reason <text>] [--by <id>]
   manner verify context --goal <id> --item <workItemId> [--by <id>]
   manner verify evidence --goal <id> --item <workItemId> [--by <id>]
+  manner verify judge --goal <id> --item <workItemId> --file verdicts.json [--by <id>]
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -379,6 +381,20 @@ async function main(): Promise<void> {
               goalId: required(args, 'goal'),
               workItemId: required(args, 'item'),
               executor: createLocalExecutor(),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'judge') {
+          const input = JSON.parse(readFileSync(required(args, 'file'), 'utf8')) as {
+            verdicts: VerdictInput[];
+          };
+          print(
+            recordVerdicts(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              verdicts: input.verdicts,
               actor: one(args, 'by'),
             }),
           );

@@ -61,15 +61,48 @@ payload 同时保存工作区、分支、HEAD 与全部证据，便于只凭审�
 manner verify evidence --goal <goalId> --item build --by verifier-1
 ```
 
-## 4. 后续任务
+## 4. S3-03 逐条判定
+
+`recordVerdicts(db, { goalId, workItemId, verdicts })` 把验证结论固化为审计事件：
+
+| 字段 | 说明 |
+| --- | --- |
+| `criterion` | 必须是目标验收标准或工作项完成标准之一 |
+| `result` | `passed`（通过）/ `failed`（不通过）/ `undetermined`（无法判定） |
+| `note` | 判定依据，不允许为空 |
+| `evidence` | 可选，引用最近一次证据采集里的 id 或哈希 |
+
+校验规则：
+
+- 每条标准恰好一条结论；缺条目、未知标准、重复判定都拒绝写入；
+- 引用的证据必须存在于最近一次 `verifier.evidence_collected`；
+- 任一校验失败时不写审计，判定与证据保持原样。
+
+摘要包含总数、通过、不通过、无法判定；只有全部通过时 `complete` 才为 `true`。
+历史判定不被覆盖：每次记录都是新审计事件，`getLatestVerdicts` 取最近一次，
+S3-04 的完成判定据此与证据交叉核对。
+
+```bash
+manner verify judge --goal <goalId> --item build --file verdicts.json --by verifier-1
+```
+
+```json
+{
+  "verdicts": [
+    { "criterion": "错误密码时展示提示文案", "result": "passed", "note": "差异中新增错误分支", "evidence": ["<evidenceId>"] },
+    { "criterion": "覆盖失败路径", "result": "undetermined", "note": "测试未覆盖失败分支" }
+  ]
+}
+```
+
+## 5. 后续任务
 
 | 任务 | 产出 | 关键约束 |
 | --- | --- | --- |
-| S3-03 逐条判定 | 每条验收标准的结论与说明 | 通过 / 不通过 / 无法判定 |
 | S3-04 完成判定 | 工作项与目标两级 DoD | 存在"不通过"或"无法判定"时不得完成 |
 | S3-05 验收视图 | 单页：目标、差异、证据、风险、待决 | 人无需追问即可决定 |
 
-## 5. 测试映射
+## 6. 测试映射
 
 | 任务 | 测试 |
 | --- | --- |
@@ -77,8 +110,11 @@ manner verify evidence --goal <goalId> --item build --by verifier-1
 | S3-01 无工作区时拒绝 | `verification.test.ts` · 没有活跃工作区时不能构建验证上下文 |
 | S3-02 证据含命令、环境、时间与哈希 | `evidence.test.ts` · 证据记录命令、环境、时间与哈希，他人可据此重跑 |
 | S3-02 无工作区时拒绝 | `evidence.test.ts` · 没有活跃工作区时不能采集证据 |
+| S3-03 覆盖全部标准并保留历史 | `verdicts.test.ts` · 逐条判定覆盖全部标准并保留历史 |
+| S3-03 校验条目与说明 | `verdicts.test.ts` · 缺条目、未知标准、重复与空说明都被拒绝 |
+| S3-03 证据引用校验 | `verdicts.test.ts` · 引用不存在的证据被拒绝 |
 
-## 6. 已知边界
+## 7. 已知边界
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
@@ -87,3 +123,5 @@ manner verify evidence --goal <goalId> --item build --by verifier-1
 | 提示词版本 | 只记录哈希，不保存正文 | S3-05 验收视图可保存快照 |
 | 证据输出 | 每条流只保留尾部 4000 字符，哈希基于保留内容 | 需要完整日志时另行落盘 |
 | 证据来源 | 只重跑自检命令，不重新执行 Agent | 复杂验证由 S3-03 判定补充 |
+| 判定录入 | 由验证者（人或 Agent）产出 JSON 后写入，不在服务内自动调用模型 | S3-07 端到端可编排调用 |
+| 判定粒度 | 以标准文本为键，跨来源同文标准合并为一条 | 需要区分来源时改结构化 id |
