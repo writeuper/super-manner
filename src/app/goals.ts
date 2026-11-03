@@ -7,6 +7,7 @@ import {
   getGoal,
   insertGoal,
   listEscalations,
+  listWorkspaces,
   revokeGrantsForGoal,
   updateEscalation,
   updateGoal,
@@ -94,12 +95,14 @@ export function cancelGoal(db: DatabaseSync, goalId: string, actor: string, now 
 
   const at = now.toISOString();
   const revoked = revokeGrantsForGoal(db, goalId, at, '目标取消');
+  let expired = 0;
   if (revoked > 0) {
     appendAudit(db, { actor, type: 'grants.revoked', goalId, payload: { count: revoked, reason: '目标取消' } }, at);
   }
 
   for (const escalation of listEscalations(db, 'pending')) {
     if (escalation.goalId !== goalId) continue;
+    expired += 1;
     updateEscalation(db, {
       ...escalation,
       status: 'expired',
@@ -113,9 +116,29 @@ export function cancelGoal(db: DatabaseSync, goalId: string, actor: string, now 
     );
   }
 
-  const updated: Goal = { ...goal, status: 'cancelled', updatedAt: at };
+  const activeWorkspaces = listWorkspaces(db, { goalId, status: 'active' }).length;
+  const updated: Goal = {
+    ...goal,
+    status: 'cancelled',
+    pausedFrom: undefined,
+    updatedAt: at,
+  };
   updateGoal(db, updated);
-  appendAudit(db, { actor, type: 'goal.cancelled', goalId, payload: { revokedGrants: revoked } }, at);
+  appendAudit(
+    db,
+    {
+      actor,
+      type: 'goal.cancelled',
+      goalId,
+      payload: {
+        from: goal.status,
+        revokedGrants: revoked,
+        expiredEscalations: expired,
+        activeWorkspaces,
+      },
+    },
+    at,
+  );
   return updated;
 }
 
