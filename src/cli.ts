@@ -20,6 +20,7 @@ import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
 import { buildReview, generateReview } from './app/review.ts';
+import { listInbox, queryTimeline } from './app/audit-query.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -154,6 +155,8 @@ const USAGE = `Super-Manner CLI
   manner budget extend --goal <goalId> --tokens <n> --by <id>
   manner review show --goal <goalId>
   manner review generate --goal <goalId> [--by <id>]
+  manner audit timeline [--goal <goalId>] [--actor <id>] [--action <type|action>] [--limit <n>]
+  manner audit inbox [--goal <goalId>] [--action <kind|action>]
   manner plan submit <goalId> --file plan.json --by <id>
   manner plan approve <planId> --by <id>
   manner plan reject <planId> --by <id> --reason <text>
@@ -577,6 +580,23 @@ async function main(): Promise<void> {
         }
         if (subcommand === 'verify') {
           print(verifyAuditChain(db));
+          return;
+        }
+        if (subcommand === 'timeline') {
+          const limit = one(args, 'limit');
+          print(
+            queryTimeline(db, {
+              goalId: one(args, 'goal'),
+              actor: one(args, 'actor'),
+              subject: one(args, 'subject'),
+              action: one(args, 'action'),
+              limit: limit === undefined ? undefined : Number(limit),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'inbox') {
+          print(listInbox(db, { goalId: one(args, 'goal'), action: one(args, 'action') }));
           return;
         }
         break;
