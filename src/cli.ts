@@ -19,6 +19,7 @@ import { buildAcceptanceView } from './app/acceptance-view.ts';
 import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
+import { buildReview, generateReview } from './app/review.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -151,6 +152,8 @@ const USAGE = `Super-Manner CLI
   manner budget status --goal <goalId>
   manner budget record --goal <goalId> --tokens <n> [--item <id>] [--source builder_run|verification|other] [--by <id>]
   manner budget extend --goal <goalId> --tokens <n> --by <id>
+  manner review show --goal <goalId>
+  manner review generate --goal <goalId> [--by <id>]
   manner plan submit <goalId> --file plan.json --by <id>
   manner plan approve <planId> --by <id>
   manner plan reject <planId> --by <id> --reason <text>
@@ -549,6 +552,19 @@ async function main(): Promise<void> {
         }
         if (subcommand === 'extend') {
           print(extendBudget(db, goalId, Number(required(args, 'tokens')), required(args, 'by')));
+          return;
+        }
+        break;
+      }
+
+      case 'review': {
+        const goalId = required(args, 'goal');
+        if (subcommand === 'show') {
+          print(buildReview(db, goalId));
+          return;
+        }
+        if (subcommand === 'generate') {
+          print(generateReview(db, goalId, one(args, 'by') ?? 'human'));
           return;
         }
         break;
