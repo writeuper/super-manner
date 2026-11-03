@@ -113,13 +113,33 @@ manner verify judge --goal <goalId> --item build --file verdicts.json --by verif
 manner verify completion --goal <goalId> --by verifier-1
 ```
 
-## 6. 后续任务
+## 6. S3-05 验收视图
+
+`buildAcceptanceView(db, { goalId })` 生成一份自包含 HTML，供人直接做接受或返工决定：
+
+| 区块 | 内容 |
+| --- | --- |
+| 头部 | 标题、描述、仓库、基线、自治级别、预算 |
+| 结论 | 两级完成判定结果；未完成时列出阻塞原因 |
+| 标准 | 目标验收标准与约束 |
+| 工作项 | 角色、预算、完成标准、逐条判定（结论/说明/证据）、证据命令与哈希、工作区差异 |
+| 风险与待决 | 计划风险；已批准计划的待决事项与尚未裁决的升级 |
+
+视图只读，不改变任何状态；生成动作记 `acceptance.view_built`。默认输出到
+`.manner/<goal 前 8 位>-acceptance.html`，可用 `--out` 指定位置。
+
+```bash
+manner verify view --goal <goalId> --out acceptance.html --by verifier-1
+```
+
+## 7. 后续任务
 
 | 任务 | 产出 | 关键约束 |
 | --- | --- | --- |
-| S3-05 验收视图 | 单页：目标、差异、证据、风险、待决 | 人无需追问即可决定 |
+| S3-06 验收决定 | 接受、返工、关闭；授权失效 | 返工生成新 Run 且保留历史结论 |
+| S3-07 端到端含返工 | 一次不通过后返工并通过 | 历史证据不被覆盖 |
 
-## 7. 测试映射
+## 8. 测试映射
 
 | 任务 | 测试 |
 | --- | --- |
@@ -133,8 +153,10 @@ manner verify completion --goal <goalId> --by verifier-1
 | S3-04 两级 DoD | `completion.test.ts` · 证据与逐条判定齐备时才判定完成 |
 | S3-04 不通过不得完成 | `completion.test.ts` · 有"不通过"或"无法判定"时不得完成，改判后以最新一次为准 |
 | S3-04 任一工作项未完成即阻塞目标 | `completion.test.ts` · 任一工作项缺证据或缺判定时目标不得完成 |
+| S3-05 视图汇总与可验收标注 | `acceptance-view.test.ts` · 验收视图汇总目标、差异、证据、风险与待决，并标注可验收 |
+| S3-05 未完成时列出阻塞原因 | `acceptance-view.test.ts` · 未完成时视图列出阻塞原因 |
 
-## 8. 已知边界
+## 9. 已知边界
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
@@ -147,3 +169,5 @@ manner verify completion --goal <goalId> --by verifier-1
 | 判定粒度 | 以标准文本为键，跨来源同文标准合并为一条 | 需要区分来源时改结构化 id |
 | 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | S3-06 由人工决定接受或返工 |
 | 证据时效 | 只要求存在证据，不校验证据是否对应最新 HEAD | 需要时在 S3-05 展示 HEAD 对比 |
+| 验收视图 | 单文件 HTML，无脚本；未跟踪文件的改动内容不展示 | 需要时内嵌完整差异或附件 |
+| 视图审计 | 只记录结论与生成时间，不保存 HTML 快照 | 需要归档时把文件纳入产物 |

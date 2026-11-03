@@ -30,6 +30,17 @@ export interface VerifierContext {
   promptHash: string;
 }
 
+export interface VerifierChange {
+  goalId: string;
+  workItemId: string;
+  workspaceId: string;
+  branch: string;
+  baseBranch: string;
+  changedFiles: string[];
+  diff: string;
+  diffTruncated: boolean;
+}
+
 function changedFilesAgainst(workspacePath: string, baseBranch: string): string[] {
   const tracked = runGit(['diff', '--name-only', baseBranch], { cwd: workspacePath }).stdout
     .split('\n')
@@ -41,6 +52,42 @@ function changedFilesAgainst(workspacePath: string, baseBranch: string): string[
 function diffAgainst(workspacePath: string, baseBranch: string): string {
   const result = runGit(['diff', baseBranch], { cwd: workspacePath });
   return result.status === 0 ? result.stdout.trim() : '';
+}
+
+/** 只取工作区的分支与差异，供验证上下文与验收视图复用。 */
+export function collectVerifierChange(
+  db: DatabaseSync,
+  input: { goalId: string; workItemId: string },
+): VerifierChange {
+  const goal = getGoalOrThrow(db, input.goalId);
+  const plan = getApprovedPlan(db, goal.id);
+  if (!plan) throw new Error('目标没有已批准的计划，不能构建验证上下文');
+  const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
+  if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);
+
+  const workspace = findActiveWorkspace(db, goal.id, item.id);
+  if (!workspace) {
+    throw new Error(`工作项 ${item.id} 没有活跃工作区，无法获取待验证的差异`);
+  }
+
+  const baseBranch = refExists(workspace.path, goal.baseBranch)
+    ? goal.baseBranch
+    : workspace.baseBranch;
+  const files = changedFilesAgainst(workspace.path, baseBranch);
+  const fullDiff = diffAgainst(workspace.path, baseBranch);
+  const truncated = fullDiff.length > MAX_DIFF_CHARS;
+  const diff = truncated ? `${fullDiff.slice(0, MAX_DIFF_CHARS)}\n…（已截断）` : fullDiff;
+
+  return {
+    goalId: goal.id,
+    workItemId: item.id,
+    workspaceId: workspace.id,
+    branch: workspace.branch,
+    baseBranch,
+    changedFiles: files,
+    diff,
+    diffTruncated: truncated,
+  };
 }
 
 function buildPrompt(
@@ -107,33 +154,24 @@ export function buildVerifierContext(
   input: BuildVerifierContextInput,
   now = new Date(),
 ): VerifierContext {
-  const goal = getGoalOrThrow(db, input.goalId);
+  const change = collectVerifierChange(db, {
+    goalId: input.goalId,
+    workItemId: input.workItemId,
+  });
+  const goal = getGoalOrThrow(db, change.goalId);
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能构建验证上下文');
-  const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
+  const item = plan.workItems.find((candidate) => candidate.id === change.workItemId);
   if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);
-
-  const workspace = findActiveWorkspace(db, goal.id, item.id);
-  if (!workspace) {
-    throw new Error(`工作项 ${item.id} 没有活跃工作区，无法获取待验证的差异`);
-  }
-
-  const baseBranch = refExists(workspace.path, goal.baseBranch)
-    ? goal.baseBranch
-    : workspace.baseBranch;
-  const files = changedFilesAgainst(workspace.path, baseBranch);
-  const fullDiff = diffAgainst(workspace.path, baseBranch);
-  const truncated = fullDiff.length > MAX_DIFF_CHARS;
-  const diff = truncated ? `${fullDiff.slice(0, MAX_DIFF_CHARS)}\n…（已截断）` : fullDiff;
 
   const prompt = buildPrompt(
     goal,
     item,
-    workspace.branch,
-    baseBranch,
-    files,
-    diff,
-    truncated,
+    change.branch,
+    change.baseBranch,
+    change.changedFiles,
+    change.diff,
+    change.diffTruncated,
   );
   const promptHash = createHash('sha256').update(prompt).digest('hex');
 
@@ -146,12 +184,12 @@ export function buildVerifierContext(
       subject: item.grant.subject,
       payload: {
         workItemId: item.id,
-        workspaceId: workspace.id,
-        branch: workspace.branch,
-        baseBranch,
-        changedFiles: files,
-        diffBytes: Buffer.byteLength(fullDiff),
-        diffTruncated: truncated,
+        workspaceId: change.workspaceId,
+        branch: change.branch,
+        baseBranch: change.baseBranch,
+        changedFiles: change.changedFiles,
+        diffBytes: Buffer.byteLength(change.diff),
+        diffTruncated: change.diffTruncated,
         promptHash,
       },
     },
@@ -161,12 +199,12 @@ export function buildVerifierContext(
   return {
     goalId: goal.id,
     workItemId: item.id,
-    workspaceId: workspace.id,
-    branch: workspace.branch,
-    baseBranch,
-    changedFiles: files,
-    diff,
-    diffTruncated: truncated,
+    workspaceId: change.workspaceId,
+    branch: change.branch,
+    baseBranch: change.baseBranch,
+    changedFiles: change.changedFiles,
+    diff: change.diff,
+    diffTruncated: change.diffTruncated,
     prompt,
     promptHash,
   };

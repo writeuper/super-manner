@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { cancelGoal, createGoal, getGoalOrThrow } from './app/goals.ts';
 import { approvePlan, rejectPlan, submitPlan, type SubmitPlanInput } from './app/plans.ts';
@@ -14,6 +15,7 @@ import { buildVerifierContext } from './app/verification.ts';
 import { collectEvidence } from './app/evidence.ts';
 import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { assessCompletion } from './app/completion.ts';
+import { buildAcceptanceView } from './app/acceptance-view.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -159,6 +161,7 @@ const USAGE = `Super-Manner CLI
   manner verify evidence --goal <id> --item <workItemId> [--by <id>]
   manner verify judge --goal <id> --item <workItemId> --file verdicts.json [--by <id>]
   manner verify completion --goal <id> [--by <id>]
+  manner verify view --goal <id> [--out <file>] [--by <id>]
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -409,6 +412,15 @@ async function main(): Promise<void> {
               actor: one(args, 'by'),
             }),
           );
+          return;
+        }
+        if (subcommand === 'view') {
+          const goalId = required(args, 'goal');
+          const view = buildAcceptanceView(db, { goalId, actor: one(args, 'by') });
+          const out = resolve(one(args, 'out') ?? `.manner/${goalId.slice(0, 8)}-acceptance.html`);
+          mkdirSync(dirname(out), { recursive: true });
+          writeFileSync(out, view.html, 'utf8');
+          print({ goalId: view.goalId, complete: view.complete, generatedAt: view.generatedAt, out });
           return;
         }
         break;

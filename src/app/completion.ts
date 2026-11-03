@@ -34,17 +34,17 @@ export interface AssessCompletionInput {
 }
 
 /**
- * 完成判定：工作项与目标两级 DoD。
+ * 完成判定：工作项与目标两级 DoD（只读，不写审计）。
  *
  * 工作项要同时具备证据与逐条判定，且没有"不通过 / 无法判定"；
- * 目标要求已批准计划里的全部工作项完成。判定结果写入审计，便于验收与追溯。
+ * 目标要求已批准计划里的全部工作项完成。
  */
-export function assessCompletion(
+export function computeCompletion(
   db: DatabaseSync,
-  input: AssessCompletionInput,
+  goalId: string,
   now = new Date(),
 ): CompletionAssessment {
-  const goal = getGoalOrThrow(db, input.goalId);
+  const goal = getGoalOrThrow(db, goalId);
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能做完成判定');
 
@@ -82,23 +82,30 @@ export function assessCompletion(
     .filter((item) => !item.complete)
     .map((item) => `工作项 ${item.workItemId} 未完成：${item.reasons.join('；')}`);
 
-  const assessment: CompletionAssessment = {
+  return {
     goalId: goal.id,
     assessedAt: now.toISOString(),
     workItems,
     goal: { complete: reasons.length === 0, reasons },
   };
+}
 
+/** 完成判定并写入审计，便于验收与追溯。 */
+export function assessCompletion(
+  db: DatabaseSync,
+  input: AssessCompletionInput,
+  now = new Date(),
+): CompletionAssessment {
+  const assessment = computeCompletion(db, input.goalId, now);
   appendAudit(
     db,
     {
       actor: input.actor ?? 'verifier',
       type: 'verifier.completion_assessed',
-      goalId: goal.id,
+      goalId: assessment.goalId,
       payload: assessment,
     },
     assessment.assessedAt,
   );
-
   return assessment;
 }
