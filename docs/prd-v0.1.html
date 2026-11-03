@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super-Manner · 产品需求文档</title>
+<style>
+  :root{
+    --ink:#101828; --body:#344054; --muted:#667085; --line:#e4e7ec;
+    --bg:#ffffff; --surface:#f9fafb; --surface-2:#f2f4f7;
+    --accent:#0f766e; --accent-soft:#ecfdf5; --accent-line:#99f6e4;
+    --warn:#b54708; --warn-soft:#fffaeb; --warn-line:#fedf89;
+    --danger:#b42318; --danger-soft:#fef3f2; --danger-line:#fecdca;
+    --radius:10px; --max:880px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--body);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .layout{display:flex; align-items:flex-start; max-width:1240px; margin:0 auto; padding:0 28px}
+  nav{
+    position:sticky; top:0; flex:0 0 232px; height:100vh; overflow:auto;
+    padding:32px 20px 32px 0; border-right:1px solid var(--line);
+  }
+  nav .brand{font-size:13px; font-weight:700; letter-spacing:.08em; color:var(--accent); text-transform:uppercase}
+  nav .ver{font-size:12px; color:var(--muted); margin:4px 0 22px}
+  nav a{display:block; padding:5px 10px; margin:1px 0; color:var(--muted); text-decoration:none; font-size:13px; border-left:2px solid transparent; border-radius:0 6px 6px 0}
+  nav a:hover{color:var(--ink); background:var(--surface)}
+  nav a.sub{padding-left:22px; font-size:12.5px}
+  nav a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft); font-weight:600}
+  main{flex:1 1 auto; min-width:0; padding:40px 0 100px 48px; max-width:calc(var(--max) + 48px)}
+  header.doc{border-bottom:1px solid var(--line); padding-bottom:26px; margin-bottom:34px}
+  .kicker{font-size:12px; font-weight:700; letter-spacing:.1em; color:var(--accent); text-transform:uppercase}
+  h1{font-size:30px; line-height:1.3; color:var(--ink); margin:10px 0 12px; letter-spacing:-.01em}
+  .lede{font-size:16px; color:var(--body); margin:0 0 20px; max-width:720px}
+  .meta{display:flex; flex-wrap:wrap; gap:8px 22px; font-size:12.5px; color:var(--muted)}
+  .meta b{color:var(--ink); font-weight:600}
+  h2{font-size:21px; color:var(--ink); margin:52px 0 14px; padding-top:8px; letter-spacing:-.005em}
+  h2 .num{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:10px; font-size:17px}
+  h3{font-size:16px; color:var(--ink); margin:30px 0 10px}
+  h4{font-size:14px; color:var(--ink); margin:20px 0 6px}
+  p{margin:0 0 12px}
+  ul,ol{margin:0 0 14px; padding-left:22px}
+  li{margin:4px 0}
+  strong{color:var(--ink); font-weight:600}
+  code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:var(--surface-2); padding:1px 5px; border-radius:4px; color:#0b4f4a}
+  table{width:100%; border-collapse:collapse; margin:6px 0 20px; font-size:13.5px}
+  th,td{text-align:left; vertical-align:top; padding:9px 11px; border:1px solid var(--line)}
+  th{background:var(--surface); color:var(--ink); font-weight:600; font-size:12.5px; letter-spacing:.02em}
+  tbody tr:nth-child(even) td{background:#fcfcfd}
+  td.n{white-space:nowrap; font-variant-numeric:tabular-nums}
+  .callout{border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface); border-radius:0 var(--radius) var(--radius) 0; padding:14px 16px; margin:16px 0 22px}
+  .callout .t{font-weight:700; color:var(--ink); font-size:13px; margin-bottom:4px}
+  .callout.warn{border-left-color:var(--warn); background:var(--warn-soft); border-color:var(--warn-line)}
+  .callout.danger{border-left-color:var(--danger); background:var(--danger-soft); border-color:var(--danger-line)}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px}
+  .chip{font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); background:#fff}
+  .chip.p0{color:var(--accent); background:var(--accent-soft); border-color:var(--accent-line)}
+  .chip.p1{color:#175cd3; background:#eff8ff; border-color:#b2ddff}
+  .fr{border:1px solid var(--line); border-radius:var(--radius); margin:18px 0; overflow:hidden}
+  .fr > .hd{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; background:var(--surface); padding:11px 16px; border-bottom:1px solid var(--line)}
+  .fr > .hd .id{font:700 12px/1 ui-monospace,Menlo,monospace; color:var(--accent); letter-spacing:.04em}
+  .fr > .hd .nm{font-weight:700; color:var(--ink); font-size:14.5px}
+  .fr > .bd{padding:4px 16px 10px}
+  .fr dl{margin:0}
+  .fr dt{font-size:12px; font-weight:700; color:var(--muted); letter-spacing:.05em; margin:12px 0 3px; text-transform:uppercase}
+  .fr dd{margin:0 0 6px}
+  .fr dd ul{margin:2px 0 2px}
+  .flow{border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin:14px 0 22px; background:#fff; font-size:13.5px}
+  .flow .step{display:flex; gap:12px; padding:6px 0; border-bottom:1px dashed var(--line)}
+  .flow .step:last-child{border-bottom:0}
+  .flow .step .k{flex:0 0 128px; color:var(--accent); font-weight:700; font-size:12.5px}
+  .note{font-size:12.5px; color:var(--muted)}
+  footer{margin-top:64px; padding-top:18px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted)}
+  @media (max-width:900px){
+    .layout{display:block; padding:0 18px}
+    nav{position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:20px 0}
+    nav a{display:inline-block; border-left:0; border-radius:6px; margin:2px 4px 2px 0}
+    nav a.sub{display:none}
+    main{padding:26px 0 60px; max-width:100%}
+    h1{font-size:24px}
+    table{font-size:12.5px}
+  }
+  @media print{
+    nav{display:none} .layout{display:block; padding:0} main{padding:0; max-width:100%}
+    body{font-size:11pt} h2{page-break-after:avoid} .fr,.flow,table{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="toc">
+  <div class="brand">Super-Manner</div>
+  <div class="ver">PRD · v0.1 · 评审稿</div>
+  <a href="#s1">1 背景与问题</a>
+  <a href="#s2">2 目标与用户</a>
+  <a href="#s3">3 范围</a>
+  <a href="#s4">4 产品模型</a>
+  <a href="#s4-1" class="sub">4.1 角色</a>
+  <a href="#s4-2" class="sub">4.2 对象</a>
+  <a href="#s4-3" class="sub">4.3 生命周期</a>
+  <a href="#s5">5 功能需求</a>
+  <a href="#s6">6 共享规则</a>
+  <a href="#s6-1" class="sub">6.1 权限矩阵</a>
+  <a href="#s6-2" class="sub">6.2 自治级别</a>
+  <a href="#s6-3" class="sub">6.3 完成定义</a>
+  <a href="#s6-4" class="sub">6.4 升级规则</a>
+  <a href="#s6-5" class="sub">6.5 迭代红线</a>
+  <a href="#s7">7 关键流程</a>
+  <a href="#s8">8 异常与边界</a>
+  <a href="#s9">9 观测与验收</a>
+  <a href="#s10">10 开放问题</a>
+  <a href="#s11">11 附录</a>
+</nav>
+<main>
+<header class="doc">
+  <div class="kicker">Product Requirements Document</div>
+  <h1>Super-Manner：可授权、可验收、可自我迭代的协作 Coding Agent</h1>
+  <p class="lede">架构师提交目标与验收标准，系统自行组队、分工、执行、验证，交付可审查的代码与证据；每次交付后，团队依据评测结果变强一点。</p>
+  <div class="meta">
+    <span>版本 <b>v0.1（评审稿）</b></span>
+    <span>状态 <b>待评审</b></span>
+    <span>范围 <b>P0 定义</b></span>
+    <span>更新 <b>2026-11-03</b></span>
+    <span>负责人 <b>[TBD]</b></span>
+  </div>
+</header>
+
+<h2 id="s1"><span class="num">01</span>背景与问题</h2>
+<p>现有的 coding agent 已经能完成单点任务：读代码、改文件、开 PR。但一旦把视角从“一个任务”抬到“一个目标”，三个问题会同时出现。</p>
+<table>
+  <thead><tr><th style="width:22%">观察到的现象</th><th style="width:38%">根因</th><th>产品响应</th></tr></thead>
+  <tbody>
+    <tr><td>Agent 能改对一个函数，但接不住“把邀请功能做完”</td><td>委派单元是任务，不是目标；缺少拆解、依赖与完成定义</td><td>引入目标契约与计划确认，目标成为唯一委派单元</td></tr>
+    <tr><td>多个 Agent 聊得很热闹，最后没人说得清做到哪了</td><td>把对话当成了状态，缺少结构化账本与证据</td><td>聊天只做协调，状态、产物、证据进账本</td></tr>
+    <tr><td>敢让它写代码，不敢让它合并、改配置、碰密钥</td><td>边界靠提示词，权限一次授予、长期有效</td><td>动作级授权，随目标签发与失效，越界由运行时拒绝</td></tr>
+    <tr><td>这次跑得好，下次还可能犯同样的错</td><td>没有复盘与评测，经验停留在人脑里</td><td>复盘产出版本化提案，离线评测后灰度生效</td></tr>
+  </tbody>
+</table>
+<p>受影响的人是<strong>架构师与技术负责人</strong>：他们不缺会写代码的 Agent，缺的是一个<strong>可以放心委派目标、并且只需要在关键点出现</strong>的协作体。</p>
+<div class="callout">
+  <div class="t">产品判断</div>
+  自主性不是“让 Agent 更敢做”，而是同时具备三件事：<strong>目标所有权</strong>（自己决定怎么做）、<strong>可验证的完成</strong>（证据定义完成）、<strong>可回滚的授权</strong>（越界必须升级）。缺任何一项，自主性都会变成风险。
+</div>
+
+<h2 id="s2"><span class="num">02</span>目标与用户</h2>
+<h3>2.1 目标用户</h3>
+<table>
+  <thead><tr><th style="width:16%">角色</th><th style="width:30%">核心诉求</th><th>在本产品中的位置</th></tr></thead>
+  <tbody>
+    <tr><td><strong>架构师</strong>（主用户）</td><td>把一整块工作交出去，只在计划、越界、验收三个点出现</td><td>目标的所有者与授权的签发者</td></tr>
+    <tr><td>开发者</td><td>提交小目标、查看进度、参与验收</td><td>目标提交人；在授权范围内同样可签发</td></tr>
+    <tr><td>Agent 维护者</td><td>调整角色契约、提示词与技能，且改动可控</td><td>Playbook 的维护者，参与迭代评审</td></tr>
+    <tr><td>观察者</td><td>了解进展，不介入</td><td>只读：房间、看板、证据</td></tr>
+  </tbody>
+</table>
+<h3>2.2 产品目标</h3>
+<ul>
+  <li>架构师用<strong>一次目标委派</strong>替代一串指令，最终拿到可审查的 PR 与完整证据。</li>
+  <li>Agent 在授权范围内自主决策，<strong>越界时停下来问，而不是绕过去</strong>。</li>
+  <li>每个目标结束后，系统能给出<strong>可评测、可回滚</strong>的改进提案。</li>
+  <li>简单任务不被组织开销拖慢：默认可以使用单 Agent。</li>
+</ul>
+<div class="callout warn">
+  <div class="t">不追求</div>
+  不追求“全自动软件公司”。P0 的终点是<strong>可验收的 PR</strong>，不是自动发布；是<strong>受控的自我改进</strong>，不是无人监督的自我复制。
+</div>
+
+<h2 id="s3"><span class="num">03</span>范围</h2>
+<h3>3.1 P0：最小完整旅程</h3>
+<div class="chips"><span class="chip p0">P0</span><span class="chip">一次目标，一个仓库，到 PR 为止</span></div>
+<ol>
+  <li><strong>提交目标</strong>：仓库、基线、验收标准、约束、预算、自治级别。</li>
+  <li><strong>确认计划</strong>：系统给出拆解、角色、依赖、预算分配与风险点，人批准或修改。</li>
+  <li><strong>签发授权</strong>：按目标签发动作级 Grant，明确能读什么、写什么、能开到哪一级。</li>
+  <li><strong>执行</strong>：Builder 在隔离工作区实现，产物为分支、提交与 PR。</li>
+  <li><strong>越界裁决</strong>：超出 Grant 的动作被运行时拒绝，需要时生成升级卡片请人裁决。</li>
+  <li><strong>独立验证</strong>：Verifier 在干净上下文中按验收标准逐条验证，产出证据。</li>
+  <li><strong>人工验收</strong>：人看目标、差异、证据、风险，做一次接受或返工决定。</li>
+  <li><strong>归档与复盘</strong>：目标结束，授权全部失效；生成复盘记录。</li>
+</ol>
+<h3>3.2 P1：紧随其后</h3>
+<ul>
+  <li>多子任务并行、依赖合流与冲突处理。</li>
+  <li>跨仓库目标（同一组织内的多个仓库）。</li>
+  <li>“挣来的自治”：连续通过验收后，按动作类别小幅提升授权。</li>
+  <li>团队知识：跨目标的经验沉淀、引用与撤回。</li>
+</ul>
+<h3>3.3 明确排除</h3>
+<ul>
+  <li>自动发布到生产环境（`release.deploy` 始终需要人）。</li>
+  <li>多租户、计费、组织级权限体系。</li>
+  <li>移动端与独立 IDE 插件。</li>
+  <li>让 Agent 修改自己的权限、预算上限或验收标准。</li>
+</ul>
+
+<h2 id="s4"><span class="num">04</span>产品模型</h2>
+<h3 id="s4-1">4.1 角色</h3>
+<p>角色不是人格设定，而是<strong>能力契约</strong>。同一套契约可以实例化多个 Agent，也可以由人临时承担。</p>
+<table>
+  <thead><tr><th style="width:14%">角色</th><th style="width:30%">对什么负责</th><th style="width:26%">关键产出</th><th>不能做什么</th></tr></thead>
+  <tbody>
+    <tr><td><strong>架构师</strong></td><td>目标是否值得做、验收是否通过</td><td>目标契约、授权、验收决定</td><td>不直接改代码</td></tr>
+    <tr><td><strong>负责人</strong>（Planner）</td><td>把目标拆成可执行、可验证的工作项</td><td>计划、依赖图、角色与预算分配</td><td>不写业务代码、不合并</td></tr>
+    <tr><td><strong>实现者</strong>（Builder）</td><td>在授权范围内完成工作项</td><td>分支、提交、PR、实现说明</td><td>不改 CI 配置、不合并、不碰密钥</td></tr>
+    <tr><td><strong>验证者</strong>（Verifier）</td><td>独立判断是否达到验收标准</td><td>逐条结论、证据、返工建议</td><td>不修代码、不与实现者共享上下文</td></tr>
+    <tr><td><strong>观察者</strong></td><td>知情</td><td>无</td><td>不做任何改变状态的操作</td></tr>
+  </tbody>
+</table>
+<p>每个角色实例都由一份<strong>角色契约</strong>定义：目标、范围与非目标、输入、产出结构、退出条件、授权、升级触发条件、交接格式。契约随目标版本化，改动需走迭代流程。</p>
+
+<h3 id="s4-2">4.2 核心对象</h3>
+<table>
+  <thead><tr><th style="width:16%">对象</th><th style="width:40%">含义</th><th>关键字段</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Goal</strong></td><td>一次委派的目标，唯一入口</td><td>描述、仓库与基线、验收标准、约束、预算、自治级别、状态</td></tr>
+    <tr><td><strong>Plan</strong></td><td>目标的版本化拆解</td><td>工作项、依赖、角色、预算分配、风险、待决点</td></tr>
+    <tr><td><strong>WorkItem</strong></td><td>可独立执行与验证的最小单元</td><td>负责人、依赖、完成定义、状态、关联产物</td></tr>
+    <tr><td><strong>Run</strong></td><td>一次角色实例的执行</td><td>实例、工作区、预算消耗、起止时间、结果</td></tr>
+    <tr><td><strong>Artifact</strong></td><td>可审查的产物</td><td>分支、提交、PR、文档、差异摘要</td></tr>
+    <tr><td><strong>Evidence</strong></td><td>支撑“完成”的事实</td><td>命令、输出、环境、时间、哈希、逐条验收结论</td></tr>
+    <tr><td><strong>Grant</strong></td><td>授权书</td><td>主体、动作集合、资源范围、约束、级别、签发人、状态</td></tr>
+    <tr><td><strong>Escalation</strong></td><td>越界裁决请求</td><td>动作、资源、理由、影响、备选、推荐、裁决结果</td></tr>
+    <tr><td><strong>Decision</strong></td><td>需要留痕的判断</td><td>问题、选项、决定、依据、决定人</td></tr>
+    <tr><td><strong>Playbook</strong></td><td>角色行为的版本化载体</td><td>提示词、技能、检查清单、适用条件、版本、评测结果</td></tr>
+    <tr><td><strong>Room / Message</strong></td><td>协调层</td><td>房间、成员、消息、引用对象、已读水位</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+  <div class="t">唯一真相</div>
+  <strong>Room 只承载协商，不承载状态。</strong> 任何影响目标推进的结论，必须落到 Decision、WorkItem 或 Evidence 上；聊天记录可以作为引用，但不能作为唯一依据。
+</div>
+
+<h3 id="s4-3">4.3 生命周期</h3>
+<h4>Goal</h4>
+<table>
+  <thead><tr><th style="width:20%">状态</th><th style="width:34%">进入条件</th><th>可执行的动作</th></tr></thead>
+  <tbody>
+    <tr><td>草稿</td><td>目标已提交，必填项待补齐</td><td>补全、删除</td></tr>
+    <tr><td>待确认</td><td>计划已生成</td><td>批准、修改、拒绝</td></tr>
+    <tr><td>执行中</td><td>计划批准且授权已签发</td><td>暂停、取消、裁决升级</td></tr>
+    <tr><td>验证中</td><td>全部工作项进入验证</td><td>查看证据、取消</td></tr>
+    <tr><td>待验收</td><td>验证结论为通过</td><td>接受、返工、关闭</td></tr>
+    <tr><td>已完成 / 失败 / 已取消</td><td>终态</td><td>查看、归档、发起复盘</td></tr>
+  </tbody>
+</table>
+<h4>WorkItem</h4>
+<p>排队 → 执行中 → 等待人（阻塞/升级）→ 验证中 → 已接受 / 待返工 / 失败 / 已取消。终态之外的状态都必须能回答“现在在等谁”。</p>
+<h4>Grant</h4>
+<p>待生效 → 生效 → 暂停 → 已撤销 / 已过期。目标进入终态时，其下所有 Grant 一并失效，正在执行的 Run 在有限时间内停止。</p>
+
+<h2 id="s5"><span class="num">05</span>功能需求</h2>
+<p>本章按任务组织。编号稳定，供评审、实现与验收引用；每条需求都覆盖触发、规则、结果与状态变化。</p>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-01</span><span class="nm">目标提交与目标契约</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让架构师用一次结构化委派，替代一串上下文不完整的指令。</dd>
+      <dt>触发</dt>
+      <dd>架构师或授权开发者从仓库、协作房间或控制台提交目标。</dd>
+      <dt>字段</dt>
+      <dd>
+        <ul>
+          <li><strong>目标描述</strong>（必填）：要达成的业务或工程结果，不是实现步骤。</li>
+          <li><strong>仓库与基线</strong>（必填）：仓库标识、基线分支、禁止改动的路径。</li>
+          <li><strong>验收标准</strong>（必填）：至少一条可机器或可人工判定的条件。</li>
+          <li><strong>约束</strong>（选填）：依赖版本、兼容性、性能、安全、风格。</li>
+          <li><strong>预算上限</strong>（必填）：以 [TBD: token 或金额] 计。</li>
+          <li><strong>自治级别</strong>（必填，默认 A2）：见 6.2。</li>
+          <li><strong>交付期限</strong>（选填）。</li>
+        </ul>
+      </dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>缺少验收标准、预算上限或仓库基线时拒绝创建，并指出缺失项。</li>
+          <li>仓库不在允许列表内时拒绝创建。</li>
+          <li>同一仓库出现高度相似的在途目标时，提示关联到已有目标，而不是新建。</li>
+          <li>提交人不具备该仓库的授权资格时，目标进入草稿并提示可用的签发人。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>目标创建为草稿；资料齐备后自动进入待确认，并触发计划生成。</dd>
+      <dt>异常</dt>
+      <dd>提交过程中会话中断时，已填写内容保留为草稿，不自动提交。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-02</span><span class="nm">计划生成与人工确认</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>在动手之前对齐“做什么、谁来做、做到什么程度”，避免昂贵的返工。</dd>
+      <dt>触发</dt>
+      <dd>目标进入待确认。</dd>
+      <dt>计划内容</dt>
+      <dd>
+        <ul>
+          <li>工作项清单：每个工作项的目标、完成定义、负责人角色。</li>
+          <li>依赖关系与可并行部分。</li>
+          <li>预算分配：合计不得超过目标预算。</li>
+          <li>风险与待决点：需要人现在决定的事项。</li>
+          <li>验证方式：谁来验证、验证哪些标准。</li>
+        </ul>
+      </dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>计划不得超出目标的范围与约束；超出时必须在计划中标明并请求扩权。</li>
+          <li>派生的角色权限必须是目标授权的子集，不得放大。</li>
+          <li>人可整体批准、逐项批准、修改后再批准，或拒绝并说明原因。</li>
+          <li>被拒绝的计划不得原样重提；必须体现修改或新增信息。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>批准后目标进入执行中，按批准范围签发授权；拒绝后目标回到草稿或终止。</dd>
+      <dt>异常</dt>
+      <dd>超过 [TBD] 未确认时保持待确认，不自动开始执行。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-03</span><span class="nm">授权签发</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>把“相信 Agent 会遵守”换成“Agent 拿不到就越不了界”。</dd>
+      <dt>触发</dt>
+      <dd>计划批准时自动生成建议授权；人确认后生效。</dd>
+      <dt>授权内容</dt>
+      <dd>主体、允许的动作集合、资源范围、约束（预算、改动行数、时效、网络白名单）、自治级别、签发人、父授权。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>只有人类主体可以签发授权；Agent 只能申请，不能签发或转授。</li>
+          <li>未匹配到任何授权的动作一律拒绝。拒绝不是异常，是正常结果。</li>
+          <li>授权随目标存续：目标结束、失败或取消时全部失效。</li>
+          <li>派生 Agent 的授权必须由父授权推导且不大于父授权。</li>
+          <li>授权不得续期；需要更长时间时重新签发。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>授权生效并写入审计；工作项获得对应动作的执行能力。</dd>
+      <dt>异常</dt>
+      <dd>授权被撤销时，正在执行的相关动作在下一次校验点失败，Run 进入等待人状态。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-04</span><span class="nm">越界与升级裁决</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让 Agent 在边界上停下来问人，而不是绕过或静默放弃。</dd>
+      <dt>触发</dt>
+      <dd>动作已在授权内但超出约束（预算、行数、路径、时效），或该动作需要第二人确认。</dd>
+      <dt>升级卡片字段</dt>
+      <dd>请求的动作与资源、原因、影响面、备选方案、推荐选项、风险说明、预算影响、有效期限。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li><strong>未授权的动作直接拒绝，不生成卡片</strong>；只有“有资格但超限”才升级，避免审批疲劳。</li>
+          <li>同一目标下的同类请求聚合为一张卡片。</li>
+          <li>批准只对本次具体动作有效，用后即失效。</li>
+          <li>超时未裁决时目标暂停，等待人；不得自动放行，也不得自行寻找替代路径绕过。</li>
+          <li>被拒绝后，Agent 必须改方案或报告阻塞；同一请求在无新信息时不得重复提交。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>批准后动作执行并留痕；拒绝后相关工作项进入阻塞并说明原因。</dd>
+      <dt>异常</dt>
+      <dd>裁决人失去该仓库权限时，请求重新路由给其他合格签发人。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-05</span><span class="nm">组队与角色实例化</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>按任务复杂度组建合适规模的团队，而不是默认越多越好。</dd>
+      <dt>触发</dt>
+      <dd>计划批准后，按工作项实例化角色。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>P0 至少包含实现者与验证者，且二者为不同实例、不同上下文。</li>
+          <li>单文件或单验收项的小目标，允许“单实现者 + 验证者”，不强制组建完整团队。</li>
+          <li>新增角色必须由负责人申请，受 <code>agent.spawn</code> 授权约束，且权限衰减。</li>
+          <li>角色实例失败后不得由同一实例给自己“补考”；重试必须换实例或换策略。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>每个实例获得独立工作区、独立预算区间与独立授权副本。</dd>
+      <dt>异常</dt>
+      <dd>并发或预算不足时，低优先级工作项排队，不得挤占验证者的资源。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-06</span><span class="nm">执行与工作区隔离</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让多个工作项可以安全并行，互不污染、互不覆盖。</dd>
+      <dt>触发</dt>
+      <dd>工作项进入执行中。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>每个工作项使用独立工作区，基线只读，产物落在独立分支。</li>
+          <li>实现者只能看到本工作项的输入与授权，不读取其他在途工作项的未完成产物。</li>
+          <li>不得修改基线、不得强制推送、不得改动超出授权路径的文件。</li>
+          <li>凡是产物，必须形成可审查的差异与提交记录；口头描述不算产物。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>工作项进入验证中时，必须已有可访问的产物与自测证据。</dd>
+      <dt>异常</dt>
+      <dd>工作区创建失败或环境不可用时，工作项进入等待人，不消耗重试次数，也不产生“已完成”的假象。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-07</span><span class="nm">协作房间与唤醒</span><span class="chip p1">P1</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让多个 Agent 与人可以协商接口、认领任务、报告阻塞，但不把对话变成状态。</dd>
+      <dt>触发</dt>
+      <dd>计划中存在跨工作项的接口或依赖时，自动创建房间并邀请相关实例。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>每条消息必须引用工作项编号；无引用的消息不进入决策记录。</li>
+          <li>通知只用于唤醒空闲实例；被唤醒的实例必须回到自己的任务上下文。</li>
+          <li>只推送三类消息：阻塞、需要决策、完成。其余静默。</li>
+          <li>人可以在房间旁观与插话；人的发言视为对该目标的直接指令，但仍受授权约束。</li>
+          <li>关键结论必须落为 Decision；聊天记录只能作为引用。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>协商结果改变工作项的依赖、接口约定或阻塞状态，并留下引用。</dd>
+      <dt>异常</dt>
+      <dd>房间成员不足或长期无人回应时，负责人升级给人，不自行假设对方同意。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-08</span><span class="nm">独立验证与证据</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让“完成”由事实支撑，而不是由实现者自己的判断支撑。</dd>
+      <dt>触发</dt>
+      <dd>实现者提交产物并声明可验证。</dd>
+      <dt>输入</dt>
+      <dd>目标的验收标准、产物差异、仓库与环境。验证者不接收实现者的推理过程与自我评价。</dd>
+      <dt>必须执行</dt>
+      <dd>
+        <ul>
+          <li>逐条给出验收标准的结论：通过 / 不通过 / 无法判定。</li>
+          <li>运行约定的检查与回归，记录命令、输出、环境、时间与产物哈希。</li>
+          <li>检查变更影响面：是否触碰禁止路径、是否引入未声明的依赖。</li>
+        </ul>
+      </dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>证据缺失即判定不通过，不允许“看起来没问题”。</li>
+          <li>验证者不得修改代码；发现问题时提出返工要求，而不是顺手修掉。</li>
+          <li>验证者与实现者必须是不同实例，且不共享上下文。</li>
+          <li>“无法判定”必须转成给人处理的问题，不得默认算通过。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>全部通过则目标进入待验收；存在不通过项则相关工作项进入待返工，并附具体理由。</dd>
+      <dt>异常</dt>
+      <dd>验证环境自身不可用时，标记为环境阻塞，不计入实现者的失败次数。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-09</span><span class="nm">人工验收与结束</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>把最终判断权留给人，同时让人只看必要信息。</dd>
+      <dt>触发</dt>
+      <dd>目标进入待验收。</dd>
+      <dt>验收视图</dt>
+      <dd>目标与验收标准、变更摘要与关键差异、逐条证据、风险与未决项、预算消耗、需要人知道的偏差。</dd>
+      <dt>动作</dt>
+      <dd>
+        <ul>
+          <li><strong>接受</strong>：目标完成，授权失效，产物保持可访问。</li>
+          <li><strong>返工</strong>：必须填写理由；生成新的工作项，继承原授权或收窄，历史记录保留。</li>
+          <li><strong>关闭</strong>：目标终止，说明原因，不影响已产生的产物。</li>
+        </ul>
+      </dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>一次验收只做一个决定；需要拆分时先拆子目标。</li>
+          <li>验收人必须是该仓库的授权主体；不能由实现者或验证者代签。</li>
+          <li>产物在验收前被外部合并或关闭时，系统提示该事实，不自动判定为通过。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>目标进入终态，生成复盘记录；返工时目标回到执行中。</dd>
+      <dt>异常</dt>
+      <dd>验收人长期不处理时，目标保持待验收并进入提醒队列，不自动接受。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-10</span><span class="nm">暂停、取消与失败恢复</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让“停下来”和“出错了”都是确定、可恢复的状态，而不是失控。</dd>
+      <dt>触发</dt>
+      <dd>人主动暂停或取消；执行失败；预算耗尽；环境中断。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>暂停：停止新的动作，保留工作区与上下文，可恢复。</li>
+          <li>取消：立即失效全部授权，停止运行中的实例，保留产物与审计，不可恢复。</li>
+          <li>同一原因连续失败两次后转为人处理；不得无限重试。</li>
+          <li>预算耗尽时暂停并升级，不允许“借预算”继续。</li>
+          <li>结果未知的外部副作用（例如已发出但未确认的写操作）不得自动重试。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>目标、工作项与授权同步进入对应状态；取消后所有派生实例与工作区在有限时间内清理。</dd>
+      <dt>异常</dt>
+      <dd>清理失败时保留记录并告警，不掩盖残留。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-11</span><span class="nm">复盘与自我迭代</span><span class="chip p1">P1</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>让团队在每次交付后变强一点，且这种变化可评测、可回滚。</dd>
+      <dt>触发</dt>
+      <dd>目标进入终态后自动生成复盘；也可由人手动发起。</dd>
+      <dt>复盘内容</dt>
+      <dd>结果与预期偏差、人工介入点、升级与拒绝记录、失败原因、预算消耗、可复用的经验。</dd>
+      <dt>允许的提案</dt>
+      <dd>角色契约与提示词、检查清单、技能库、任务拆解策略、路由规则、测试用例。</dd>
+      <dt>禁止的提案</dt>
+      <dd>权限与授权规则、预算上限、验收标准、验证器本身、审计记录。</dd>
+      <dt>流程</dt>
+      <dd>
+        <ol>
+          <li>提出变更包：差异、假设、预期收益、影响面。</li>
+          <li>在留出的黄金任务集上回放，必须证明“不下降，且至少一项改善”。</li>
+          <li>小范围灰度生效，观察结果与偏差。</li>
+          <li>晋升或回滚；高风险变更必须由人批准。</li>
+        </ol>
+      </dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>未通过评测的变更不得上线，不得以“先试试”为理由绕过。</li>
+          <li>上线后关键结果恶化时自动回滚，并保留现场。</li>
+          <li>Agent 不能修改评估集、评估标准或自己的权限。</li>
+          <li>每次变更必须能回答：改了什么、为什么、证据是什么、如何回滚。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>生成新版本的 Playbook，旧版本保留可回退；变更记录进入审计。</dd>
+      <dt>异常</dt>
+      <dd>评测环境不可用时保持原版本，不降级为“人工口头判断”。</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="fr">
+  <div class="hd"><span class="id">FR-12</span><span class="nm">审计、追溯与待我处理</span><span class="chip p0">P0</span></div>
+  <div class="bd">
+    <dl>
+      <dt>目的</dt>
+      <dd>任何一次交付都能回答“谁、凭什么、做了什么、结果如何”。</dd>
+      <dt>记录范围</dt>
+      <dd>目标的创建与变更、计划批准、授权签发与失效、每一次放行与拒绝、升级与裁决、验证证据、验收决定、迭代上线与回滚。</dd>
+      <dt>规则</dt>
+      <dd>
+        <ul>
+          <li>审计只追加，不可删除、不可静默修改；纠错以新增记录表达。</li>
+          <li>每条记录包含主体、时间、动作、资源、依据（哪条授权或哪次裁决）。</li>
+          <li>“待我处理”只呈现三类：待确认计划、待裁决升级、待验收结果。</li>
+          <li>队列项必须显示等待时长与卡住的原因，而不只是一个状态标签。</li>
+        </ul>
+      </dd>
+      <dt>结果与状态变化</dt>
+      <dd>人可在任意时刻还原一个目标的完整决策链。</dd>
+      <dt>异常</dt>
+      <dd>审计写入失败时，相关动作不得继续执行。</dd>
+    </dl>
+  </div>
+</div>
+
+<h2 id="s6"><span class="num">06</span>共享规则</h2>
+<p>以下规则对全部功能需求生效，不重复写在单条需求里。出现冲突时，以本章为准。</p>
+
+<h3 id="s6-1">6.1 权限矩阵</h3>
+<p>本表约束的是<strong>系统授予 Agent 角色的动作能力</strong>。人类主体的仓库权限由代码托管平台决定，系统只额外约束其能否签发授权。</p>
+<table>
+  <thead><tr><th style="width:16%">动作</th><th style="width:16%">实现者</th><th style="width:15%">验证者</th><th style="width:15%">负责人</th><th>授予条件</th></tr></thead>
+  <tbody>
+    <tr><td><code>repo.read</code></td><td>允许（限工作项相关路径）</td><td>允许（只读）</td><td>允许</td><td>默认随目标签发</td></tr>
+    <tr><td><code>repo.write</code></td><td>允许（限授权路径）</td><td>禁止</td><td>禁止</td><td>计划批准后按工作项签发</td></tr>
+    <tr><td><code>repo.commit</code></td><td>允许（限自有分支）</td><td>禁止</td><td>禁止</td><td>随 <code>repo.write</code> 一并签发</td></tr>
+    <tr><td><code>repo.push</code></td><td>允许（限自有分支，禁强推）</td><td>禁止</td><td>禁止</td><td>随 <code>repo.write</code> 一并签发</td></tr>
+    <tr><td><code>pr.create</code></td><td>允许</td><td>禁止</td><td>禁止</td><td>A2 及以上，且目标已指定目标分支</td></tr>
+    <tr><td><code>pr.comment</code></td><td>允许</td><td>允许</td><td>允许</td><td>默认签发</td></tr>
+    <tr><td><code>pr.review</code></td><td>禁止</td><td>允许（只出结论，不改代码）</td><td>禁止</td><td>验证阶段签发</td></tr>
+    <tr><td><code>pr.merge</code></td><td>禁止</td><td>禁止</td><td>禁止</td><td>仅 A3 且在限额内，由人按次签发</td></tr>
+    <tr><td><code>ci.rerun</code></td><td>申请</td><td>允许（仅重跑，不改配置）</td><td>禁止</td><td>验证阶段签发</td></tr>
+    <tr><td><code>release.deploy</code></td><td>禁止</td><td>禁止</td><td>禁止</td><td>始终由人执行；A4 可代为执行预发</td></tr>
+    <tr><td><code>secret.read</code></td><td>禁止</td><td>禁止</td><td>禁止</td><td>默认拒绝；仅按密钥别名取短期凭据，单独签发</td></tr>
+    <tr><td><code>network.egress</code></td><td>禁止</td><td>禁止</td><td>禁止</td><td>按域名白名单单独签发，随目标失效</td></tr>
+    <tr><td><code>spend.tokens</code></td><td>允许（限工作项预算区间）</td><td>允许（限验证预算）</td><td>允许（限计划总额）</td><td>计划批准时分配</td></tr>
+    <tr><td><code>agent.spawn</code></td><td>禁止</td><td>禁止</td><td>允许（数量上限，权限衰减）</td><td>计划批准时按需签发</td></tr>
+    <tr><td><code>grant.issue</code></td><td>禁止</td><td>禁止</td><td>禁止</td><td>仅人类；Agent 只能申请</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+  <div class="t">为什么用动作而不是角色授权</div>
+  角色会变、实例会换、提示词会被改写，只有<strong>动作 + 资源 + 约束</strong>是可校验的。系统在每次工具调用前比对授权，不依赖 Agent 是否“记得”规则；未匹配即拒绝，拒绝是正常返回值，不是错误。
+</div>
+
+<h3 id="s6-2">6.2 自治级别</h3>
+<p>自治级别是<strong>上限</strong>，不是默认放行。级别为 A3 不代表可以合并任意 PR，具体动作仍需对应的 Grant 覆盖。</p>
+<table>
+  <thead><tr><th style="width:9%">级别</th><th style="width:17%">名称</th><th style="width:32%">可自主完成</th><th>必须停下来问</th></tr></thead>
+  <tbody>
+    <tr><td class="n"><strong>A0</strong></td><td>只读建议</td><td>读代码、分析、给出方案与差异建议</td><td>一切写操作；连评论也需人代发</td></tr>
+    <tr><td class="n"><strong>A1</strong></td><td>提方案</td><td>在 Issue 或房间内讨论、写方案文档、产出补丁草案</td><td>开分支、推送、开 PR</td></tr>
+    <tr><td class="n"><strong>A2</strong></td><td>写分支开 PR<br><span class="note">（默认）</span></td><td>写自有分支、提交、推送、开 PR、回应评审意见</td><td>合并、改 CI 配置、读密钥、跨仓库操作</td></tr>
+    <tr><td class="n"><strong>A3</strong></td><td>合并小改动</td><td>在行数、文件数、路径白名单与 CI 通过等限额内合并</td><td>超出限额、触碰敏感路径、发布</td></tr>
+    <tr><td class="n"><strong>A4</strong></td><td>发布运维</td><td>预发部署、灰度、回滚、跑运维脚本</td><td>生产发布、改权限、改预算、改基础设施配置</td></tr>
+  </tbody>
+</table>
+<p>级别只能由人设定或调整，且调整本身进入审计。Agent 可以提出“希望提升到 A3”的建议，但不能自行生效。</p>
+
+<h3 id="s6-3">6.3 完成定义</h3>
+<p>完成不是状态字段，而是<strong>证据集合的结论</strong>。三个层级分别定义：</p>
+<table>
+  <thead><tr><th style="width:16%">层级</th><th style="width:48%">必须同时满足</th><th>判定人</th></tr></thead>
+  <tbody>
+    <tr><td><strong>工作项完成</strong></td><td>产物可访问；自测证据齐全；未触碰禁止路径；验证者逐条给出结论且无“不通过”</td><td>验证者</td></tr>
+    <tr><td><strong>目标完成</strong></td><td>全部工作项已接受；验收标准全部有结论；无未决升级；预算未超限；人已作出接受决定</td><td>验收人</td></tr>
+    <tr><td><strong>交付完成</strong></td><td>PR 已按授权合并或明确交由人合并；复盘记录已生成；授权已失效</td><td>系统 + 验收人</td></tr>
+  </tbody>
+</table>
+<h4>证据的最低要求</h4>
+<ul>
+  <li>可复现：给出命令、环境与依赖版本，他人能重跑。</li>
+  <li>可核对：附输出摘要与产物哈希，而不只是“已通过”。</li>
+  <li>可归属：记录执行者实例、时间与所依据的验收标准条目。</li>
+</ul>
+<div class="callout warn">
+  <div class="t">不许用“看起来没问题”结案</div>
+  证据缺失一律判为不通过；“无法判定”必须转成给人处理的问题，不得默认算通过，也不得由实现者补充自评后重新计数。
+</div>
+
+<h3 id="s6-4">6.4 升级规则</h3>
+<table>
+  <thead><tr><th style="width:32%">情况</th><th style="width:30%">系统行为</th><th>理由</th></tr></thead>
+  <tbody>
+    <tr><td>动作不在任何 Grant 内</td><td>直接拒绝，不生成卡片，返回拒绝原因</td><td>无资格不是“超限”，问人只会制造审批噪音</td></tr>
+    <tr><td>动作在 Grant 内但超出约束</td><td>暂停该动作，生成升级卡片</td><td>有资格但超限，人的一次判断即可放行</td></tr>
+    <tr><td>高风险动作需第二人确认</td><td>路由给第二名合格签发人</td><td>单点判断不足以承担该类风险</td></tr>
+    <tr><td>同一目标出现多个同类请求</td><td>聚合为一张卡片，列明各项</td><td>避免同一类问题反复打断人</td></tr>
+    <tr><td>批准后执行</td><td>仅对当次动作、当次资源有效，用后失效</td><td>批准是判断，不是长期授权</td></tr>
+    <tr><td>超时未裁决</td><td>目标暂停并保持等待</td><td>不自动放行，也不许绕路</td></tr>
+    <tr><td>被拒绝且无新信息</td><td>拒绝重复提交，要求改方案或报告阻塞</td><td>防止用重试消耗人的注意力</td></tr>
+    <tr><td>裁决人失去该仓库资格</td><td>重新路由给其他合格签发人</td><td>授权链不能停在失效主体上</td></tr>
+  </tbody>
+</table>
+
+<h3 id="s6-5">6.5 迭代红线</h3>
+<p>以下六条对任何角色、任何级别、任何自动化流程都成立。触碰任一条，相关变更自动失效并升级给人。</p>
+<ol>
+  <li>不得修改评估集、验证器或验收标准，使自己的产出更容易通过。</li>
+  <li>不得为自己或同伴提升权限、扩大预算、放宽网络与密钥范围。</li>
+  <li>不得删除、改写或选择性忽略失败、拒绝与回滚记录。</li>
+  <li>不得跳过评测直接上线，也不得以“先灰度试试”替代评测。</li>
+  <li>不得由同一实例既提出变更又批准变更。</li>
+  <li>不得派生无父授权、无预算、无回收期限的常驻实例。</li>
+</ol>
+<div class="callout danger">
+  <div class="t">红线的执行方式</div>
+  红线不是提示词里的劝告，而是运行时校验：变更包的字段中若包含权限、预算、验收标准或评估集，提交即被拒绝；审计表对写入方只开放追加。
+</div>
+
+<h2 id="s7"><span class="num">07</span>关键流程</h2>
+<p>流程描述的是<strong>正常路径下的责任交接</strong>，异常分支见第 8 章。每个步骤都要有明确产出物，没有产出物的步骤视为未发生。</p>
+
+<h3>7.1 一次典型交付</h3>
+<div class="flow">
+  <div class="step"><div class="k">T0 提交</div><div>架构师提交目标：仓库与基线、验收标准、约束、预算、自治级别。 → <strong>Goal（草稿→待确认）</strong></div></div>
+  <div class="step"><div class="k">T1 计划</div><div>负责人拆解工作项、依赖、角色、预算与风险，标出需要现在决定的事项。 → <strong>Plan v1</strong></div></div>
+  <div class="step"><div class="k">T2 确认</div><div>架构师批准、修改或拒绝。批准即表示认可范围与预算分配。 → <strong>Decision</strong></div></div>
+  <div class="step"><div class="k">T3 授权</div><div>按批准结果签发动作级 Grant，并按工作项派生、只减不增。 → <strong>Grant 集合</strong></div></div>
+  <div class="step"><div class="k">T4 执行</div><div>实现者在独立工作区完成工作项，产物为分支与提交，期间不触碰禁止路径。 → <strong>Artifact</strong></div></div>
+  <div class="step"><div class="k">T5 自检</div><div>实现者跑通约定检查，提交 PR 与自测说明，声明可验证。 → <strong>PR + 自测证据</strong></div></div>
+  <div class="step"><div class="k">T6 验证</div><div>验证者在干净上下文按验收标准逐条判定，记录命令、环境与哈希。 → <strong>Evidence + 结论</strong></div></div>
+  <div class="step"><div class="k">T7 验收</div><div>架构师看目标、差异、证据与风险，做接受、返工或关闭。 → <strong>Decision</strong></div></div>
+  <div class="step"><div class="k">T8 归档</div><div>授权全部失效，产物保持可访问，生成复盘记录。 → <strong>Review + 审计</strong></div></div>
+</div>
+<div class="callout">
+  <div class="t">人只出现在三个点</div>
+  T2 确认计划、T7 验收结果，以及期间的越界裁决。其余时刻人可以旁观，但不被要求持续盯着进度；系统的默认行为是<strong>继续推进或明确停下等人</strong>，而不是频繁询问。
+</div>
+
+<h3>7.2 越界裁决</h3>
+<div class="flow">
+  <div class="step"><div class="k">① 拦截</div><div>工具调用前校验动作、资源与约束，命中即拦截并返回结构化原因，实例不获得部分执行。</div></div>
+  <div class="step"><div class="k">② 归因</div><div>区分“无授权”与“超约束”：前者直接拒绝并结束；后者进入升级。</div></div>
+  <div class="step"><div class="k">③ 组卡</div><div>生成升级卡片：动作、资源、原因、影响面、备选方案、推荐项、预算影响、有效期限。</div></div>
+  <div class="step"><div class="k">④ 裁决</div><div>合格签发人批准（限当次）、拒绝（须给理由）或要求补充信息。</div></div>
+  <div class="step"><div class="k">⑤ 执行</div><div>批准后仅执行该次动作，用后失效；拒绝后工作项进入阻塞并说明原因。</div></div>
+  <div class="step"><div class="k">⑥ 留痕</div><div>记录请求、依据、裁决人、结果与耗时，供复盘统计升级热点。</div></div>
+</div>
+<p>若实例在等待期间发现另一条不越界的路径，可以改道执行，但必须在记录中说明改道原因；不得静默绕过原请求。</p>
+
+<h3>7.3 失败与恢复</h3>
+<table>
+  <thead><tr><th style="width:20%">场景</th><th style="width:26%">判定</th><th style="width:28%">系统动作</th><th>恢复方式</th></tr></thead>
+  <tbody>
+    <tr><td>实现失败</td><td>构建、测试或运行报错</td><td>记录失败证据，同实例有限次重试</td><td>换策略重试；两次同因失败转人</td></tr>
+    <tr><td>验证不通过</td><td>存在“不通过”项</td><td>工作项转待返工，附具体条目与证据</td><td>新 Run 返工，历史结论保留</td></tr>
+    <tr><td>环境不可用</td><td>工作区或依赖无法创建</td><td>标记环境阻塞，不消耗实现者失败次数</td><td>环境恢复后从检查点继续</td></tr>
+    <tr><td>预算耗尽</td><td>消耗达到分配上限</td><td>暂停并升级</td><td>人追加预算或收窄范围</td></tr>
+    <tr><td>授权撤销</td><td>下一次校验点失败</td><td>停止相关动作，Run 转等待人</td><td>重新签发或取消目标</td></tr>
+    <tr><td>产物被外部改动</td><td>基线或 PR 被他人更新</td><td>提示冲突事实，不自动覆盖</td><td>人决定变基、重做或放弃</td></tr>
+    <tr><td>外部副作用未知</td><td>写操作已发出但未确认</td><td>不自动重试，标记待核对</td><td>人工核对后决定继续或回滚</td></tr>
+  </tbody>
+</table>
+<p class="note">共同原则：失败必须留下证据、必须能回答“现在在等谁”、必须允许人不带上下文地接手。</p>
+
+<h3>7.4 一次进化提案</h3>
+<div class="flow">
+  <div class="step"><div class="k">① 复盘</div><div>目标终态后汇总：偏差、人工介入点、拒绝与升级、失败原因、预算消耗。 → <strong>Review</strong></div></div>
+  <div class="step"><div class="k">② 提案</div><div>只能改角色契约、提示词、检查清单、技能、拆解策略、路由规则、测试用例。 → <strong>Change Set</strong></div></div>
+  <div class="step"><div class="k">③ 回放</div><div>在留出的黄金任务集上对比新旧版本，要求“不下降，且至少一项改善”。 → <strong>评测报告</strong></div></div>
+  <div class="step"><div class="k">④ 灰度</div><div>小范围启用新版本，观察关键结果与偏差，保留随时回退的开关。 → <strong>Canary</strong></div></div>
+  <div class="step"><div class="k">⑤ 晋升</div><div>达标则晋升为新默认版本；恶化则自动回滚并保留现场。 → <strong>Playbook vN+1</strong></div></div>
+</div>
+<div class="callout warn">
+  <div class="t">高风险变更必须由人批准</div>
+  涉及路由规则、验证阈值、任务拆解策略的变更会改变系统的整体行为，即使评测通过也必须由人确认；其余变更可由系统在评测与灰度达标后自动晋升，并事后通知。
+</div>
+
+<h2 id="s8"><span class="num">08</span>异常与边界</h2>
+<p>本章列出必须被显式处理的情形。判定标准不是“有没有报错”，而是<strong>状态是否诚实、是否可恢复、是否留下证据</strong>。</p>
+<table>
+  <thead><tr><th style="width:24%">情形</th><th style="width:38%">期望行为</th><th>不得发生</th></tr></thead>
+  <tbody>
+    <tr><td>目标信息不完整</td><td>保存为草稿，逐项指出缺失字段与可补全的人</td><td>用默认值替人做决定后开始执行</td></tr>
+    <tr><td>两个目标改同一片代码</td><td>提示冲突范围，建议合并目标或错开执行</td><td>双方并行改同一文件后互相覆盖</td></tr>
+    <tr><td>计划与目标范围冲突</td><td>在计划中标红并请求扩权或缩范围</td><td>先做后报，等验收时才发现超出授权</td></tr>
+    <tr><td>验收标准无法判定</td><td>转成给人处理的具体问题，目标保持待验收</td><td>由实现者自评后算通过</td></tr>
+    <tr><td>长时间无人裁决</td><td>目标暂停，队列显示等待时长与卡点</td><td>超时自动放行或自动降级执行</td></tr>
+    <tr><td>取消目标</td><td>授权立即失效，运行实例停止，产物与审计保留</td><td>清理不彻底却标记为已取消</td></tr>
+    <tr><td>授权在运行中失效</td><td>下一校验点停止，未完成的写操作不重试</td><td>用已缓存的凭据继续完成当前步骤</td></tr>
+    <tr><td>证据缺失或损坏</td><td>判定不通过，要求重跑并说明</td><td>沿用上一次的通过结论</td></tr>
+    <tr><td>预算耗尽</td><td>暂停并升级，说明已产生的价值与剩余工作</td><td>自行压缩验证步骤以省预算</td></tr>
+    <tr><td>环境或依赖中断</td><td>标记环境阻塞，保留检查点</td><td>把环境问题计入实现者失败次数</td></tr>
+    <tr><td>PR 被外部合并或关闭</td><td>如实提示，交人判断是否仍满足验收标准</td><td>因“已合并”自动判定目标完成</td></tr>
+    <tr><td>迭代后指标恶化</td><td>自动回滚到上一版本并保留现场</td><td>继续观察一段时间再说</td></tr>
+  </tbody>
+</table>
+<div class="callout danger">
+  <div class="t">一条底线</div>
+  <strong>宁可停在“等待人”，也不要停在“看起来完成了”。</strong> 所有模糊情形一律向“保留状态、请求判断”收敛，而不是向“继续执行”收敛。
+</div>
+
+<h2 id="s9"><span class="num">09</span>观测与验收</h2>
+<p>本产品自身也需要被验收。原则是：<strong>看人是否更省力、看状态是否可信</strong>，而不是看 Agent 写了多少代码。</p>
+
+<h3>9.1 可观察信号</h3>
+<table>
+  <thead><tr><th style="width:18%">维度</th><th style="width:34%">信号</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="3"><strong>自主性</strong></td><td>每个目标的人工介入次数</td><td>判断是否只在计划、越界、验收三点出现</td></tr>
+    <tr><td>无人工干预直达待验收的比例</td><td>判断目标所有权是否真的交出去了</td></tr>
+    <tr><td>升级请求中“有资格但超限”的占比</td><td>过高说明授权过窄，过低可能说明授权过宽</td></tr>
+    <tr><td rowspan="3"><strong>可靠性</strong></td><td>首次验证通过率</td><td>衡量实现质量与自检有效性</td></tr>
+    <tr><td>平均返工次数与返工原因分布</td><td>定位是理解偏差、实现缺陷还是标准不清</td></tr>
+    <tr><td>未授权动作的实际拦截次数</td><td>验证边界是否真的在运行时生效</td></tr>
+    <tr><td rowspan="2"><strong>效率</strong></td><td>目标从提交到待验收的耗时分布</td><td>识别计划、等待裁决、验证哪一段最慢</td></tr>
+    <tr><td>预算实际消耗与计划分配的偏差</td><td>校准拆解与估算</td></tr>
+    <tr><td rowspan="2"><strong>进化</strong></td><td>迭代提案的评测通过率与回滚率</td><td>判断自我改进是真实有效还是噪声</td></tr>
+    <tr><td>变更上线后关键信号的偏移</td><td>确认改进没有以别处退化为代价</td></tr>
+  </tbody>
+</table>
+<p class="note">本版不承诺具体数值目标。基线需在 P0 试运行后按真实数据确定，目标值与告警阈值在评审时补充 [TBD]。</p>
+
+<h3>9.2 验收方式</h3>
+<p>P0 的验收不看功能清单是否全部点亮，而看以下五条是否同时成立：</p>
+<ol>
+  <li>架构师<strong>只凭验收视图</strong>就能做出接受或返工决定，无需再向 Agent 追问背景。</li>
+  <li>换一个人接手，能仅凭审计记录还原“谁、凭什么、做了什么、结果如何”。</li>
+  <li>取消一个目标后，其授权确实失效，没有残留实例继续动作。</li>
+  <li>整个试运行期间，<strong>没有一次未授权动作被执行</strong>。</li>
+  <li>至少有一次进化提案完整走完“评测 → 灰度 → 晋升或回滚”。</li>
+</ol>
+<div class="callout">
+  <div class="t">失败信号</div>
+  出现下列任一情况即视为不达标：需要人持续盯进度才有推进；验收时需要口头解释才能理解证据；Agent 绕开拒绝换条路继续做；复盘结论无法追溯到具体记录。
+</div>
+
+<h2 id="s10"><span class="num">10</span>开放问题</h2>
+<p>以下问题会影响实现取舍，需要在评审中定稿。未定稿前，实现按“当前倾向”执行，并保证可配置。</p>
+<table>
+  <thead><tr><th style="width:6%">#</th><th style="width:26%">问题</th><th style="width:32%">为什么重要</th><th style="width:20%">当前倾向</th><th>决定人</th></tr></thead>
+  <tbody>
+    <tr><td class="n">Q1</td><td>预算用什么单位</td><td>决定分配、暂停与升级的判定口径</td><td>以 token 为主，金额折算</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q2</td><td>哪些动作必须第二人确认</td><td>直接影响审批负担与风险覆盖</td><td>合并、密钥、跨仓库</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q3</td><td>默认自治级别</td><td>决定首次使用的安全边界</td><td>全局 A2，按仓库可覆盖</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q4</td><td>跨仓库目标是否共用一棵授权树</td><td>影响权限衰减与失效传播</td><td>同一目标下分仓库签发</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q5</td><td>复盘由系统主导还是人主持</td><td>决定复盘质量与人的投入</td><td>系统生成，人可补充结论</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q6</td><td>验收长期无响应如何处理</td><td>避免目标永久悬挂</td><td>提醒并保持等待，不代验收</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q7</td><td>证据与审计的保留期限</td><td>涉及存储成本与合规</td><td>与代码仓库保留策略一致</td><td>[TBD]</td></tr>
+    <tr><td class="n">Q8</td><td>房间是否接入现有 IM</td><td>决定协调层的落地形态</td><td>先内置，后续接飞书等</td><td>[TBD]</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s11"><span class="num">11</span>附录</h2>
+<h3>11.1 与参考实现的取舍</h3>
+<p>本产品不直接复用下列项目的代码或协议，只借鉴其被验证过的模型。</p>
+<table>
+  <thead><tr><th style="width:22%">能力</th><th style="width:30%">参考来源</th><th>在本产品中的形态</th></tr></thead>
+  <tbody>
+    <tr><td>事件入口与工单生命周期</td><td>dsh-superagent-prototype</td><td>外部事件进入后形成目标与工作项；状态由事实派生，不靠人工改标签</td></tr>
+    <tr><td>隔离执行</td><td>dsh-superagent-prototype</td><td>每个工作项独立工作区与独立会话，产物落独立分支</td></tr>
+    <tr><td>组织与依赖</td><td>multi-agent-team</td><td>工作项依赖、角色契约、预算分配、独立验证与证据</td></tr>
+    <tr><td>协调层</td><td>opencode-chat-room</td><td>房间、唤醒、已读水位、人机同群；只协商，不承载状态</td></tr>
+    <tr><td>组织学习</td><td>本产品新增</td><td>复盘 → 提案 → 黄金任务集评测 → 灰度 → 晋升或回滚</td></tr>
+  </tbody>
+</table>
+<p>三者互补但都不完整：前者强在入口与生命周期，中者强在组织与证据，后者强在通信；缺的正是<strong>把交付结果转化为受控改进</strong>的那一层。</p>
+
+<h3>11.2 术语</h3>
+<table>
+  <thead><tr><th style="width:20%">术语</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><strong>目标（Goal）</strong></td><td>一次委派，包含验收标准、约束、预算与自治级别，是唯一入口</td></tr>
+    <tr><td><strong>工作项（WorkItem）</strong></td><td>可独立执行与验证的最小单元，必须能回答“现在在等谁”</td></tr>
+    <tr><td><strong>授权（Grant）</strong></td><td>动作、资源、约束的组合，随目标签发与失效，不可转授</td></tr>
+    <tr><td><strong>升级（Escalation）</strong></td><td>有资格但超限时请求人裁决，一次一用</td></tr>
+    <tr><td><strong>证据（Evidence）</strong></td><td>可复现、可核对、可归属的事实，是“完成”的唯一依据</td></tr>
+    <tr><td><strong>Playbook</strong></td><td>角色行为的版本化载体，变更需经评测与灰度</td></tr>
+    <tr><td><strong>自治级别</strong></td><td>A0–A4，表示允许自主推进的上限，不是默认放行</td></tr>
+    <tr><td><strong>黄金任务集</strong></td><td>留出的、不参与日常优化的评测任务集合，用于比较版本</td></tr>
+    <tr><td><strong>权限衰减</strong></td><td>派生授权的范围只能小于或等于父授权</td></tr>
+    <tr><td><strong>完成定义（DoD）</strong></td><td>工作项、目标、交付三层各自的完成条件，全部以证据判定</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  <p><strong>Super-Manner · 产品需求文档</strong> · v0.1 评审稿 · 2026-11-03</p>
+  <p>本文定义产品行为与边界，不包含技术架构、接口与存储设计。标注 [TBD] 的内容需在评审中确定；确定前实现须保持可配置。</p>
+</footer>
+
+</main>
+</div>
+<script>
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+    var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+    if(!('IntersectionObserver' in window) || !targets.length) return;
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(!e.isIntersecting) return;
+        links.forEach(function(a){ a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id); });
+      });
+    }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+    targets.forEach(function(t){ obs.observe(t); });
+  })();
+</script>
+</body>
+</html>
