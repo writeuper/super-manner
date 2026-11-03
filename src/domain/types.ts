@@ -168,6 +168,28 @@ export interface AuthResult {
   grantId?: string;
 }
 
+export type WorkspaceStatus = 'active' | 'removed';
+
+/**
+ * 工作项隔离出来的独立 worktree。
+ *
+ * repo 是逻辑仓库名（owner/repo），repoDir 是本地克隆路径；
+ * branch 以 feature/sm-* 命名，天然落在 S1 工作项授权的分支范围内。
+ */
+export interface Workspace {
+  id: string;
+  goalId: string;
+  workItemId: string;
+  repo: string;
+  repoDir: string;
+  baseBranch: string;
+  branch: string;
+  path: string;
+  status: WorkspaceStatus;
+  createdAt: string;
+  removedAt?: string;
+}
+
 export interface CreateGoalInput {
   title: string;
   description?: string;

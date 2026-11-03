@@ -5,11 +5,19 @@ import { cancelGoal, createGoal, getGoalOrThrow } from './app/goals.ts';
 import { approvePlan, rejectPlan, submitPlan, type SubmitPlanInput } from './app/plans.ts';
 import { decideEscalation, sweepExpiredEscalations } from './app/escalations.ts';
 import { requestAction } from './app/gateway.ts';
+import { instantiateRole } from './app/roles.ts';
+import { cleanupWorkspace, createWorkspace } from './app/workspaces.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
 import { openDatabase } from './infra/db.ts';
-import { getGoal, listEscalations, listGrantsForGoal, listPlansForGoal } from './infra/store.ts';
+import {
+  getGoal,
+  listEscalations,
+  listGrantsForGoal,
+  listPlansForGoal,
+  listWorkspaces,
+} from './infra/store.ts';
 
 interface ParsedArgs {
   positional: string[];
@@ -96,6 +104,11 @@ const USAGE = `Super-Manner CLI
   manner plan approve <planId> --by <id>
   manner plan reject <planId> --by <id> --reason <text>
   manner grant list --goal <goalId>
+  manner workspace create --goal <id> --item <workItemId> --repo-dir <path>
+                          [--worktree-root <dir>] [--base <branch>] [--by <id>]
+  manner workspace list [--goal <id>] [--active]
+  manner workspace cleanup <workspaceId> [--delete-branch] [--force] [--by <id>]
+  manner role instantiate --goal <id> --item <workItemId> [--by <id>]
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -181,6 +194,58 @@ function main(): void {
       case 'grant': {
         if (subcommand === 'list') {
           print(listGrantsForGoal(db, required(args, 'goal')));
+          return;
+        }
+        break;
+      }
+
+      case 'workspace': {
+        if (subcommand === 'create') {
+          print(
+            createWorkspace(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              repoDir: required(args, 'repo-dir'),
+              worktreeRoot: one(args, 'worktree-root'),
+              baseBranch: one(args, 'base'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'list') {
+          print(
+            listWorkspaces(db, {
+              goalId: one(args, 'goal'),
+              status: bool(args, 'active') ? 'active' : undefined,
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'cleanup') {
+          const workspaceId = third;
+          if (!workspaceId) throw new Error('缺少工作区 id');
+          print(
+            cleanupWorkspace(db, workspaceId, {
+              actor: one(args, 'by'),
+              deleteBranch: bool(args, 'delete-branch'),
+              force: bool(args, 'force'),
+            }),
+          );
+          return;
+        }
+        break;
+      }
+
+      case 'role': {
+        if (subcommand === 'instantiate') {
+          print(
+            instantiateRole(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              actor: one(args, 'by'),
+            }),
+          );
           return;
         }
         break;

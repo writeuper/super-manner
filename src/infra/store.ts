@@ -6,6 +6,8 @@ import type {
   Goal,
   Grant,
   Plan,
+  Workspace,
+  WorkspaceStatus,
 } from '../domain/types.ts';
 
 type Row = Record<string, unknown>;
@@ -362,4 +364,85 @@ export function findUsableApproval(
 
 export function markApprovalUsed(db: DatabaseSync, id: string, at: string): void {
   db.prepare('UPDATE approvals SET used_at = ? WHERE id = ? AND used_at IS NULL').run(at, id);
+}
+
+// ---------- Workspace ----------
+
+function workspaceFromRow(row: Row): Workspace {
+  return {
+    id: String(row.id),
+    goalId: String(row.goal_id),
+    workItemId: String(row.work_item_id),
+    repo: String(row.repo),
+    repoDir: String(row.repo_dir),
+    baseBranch: String(row.base_branch),
+    branch: String(row.branch),
+    path: String(row.path),
+    status: String(row.status) as WorkspaceStatus,
+    createdAt: String(row.created_at),
+    removedAt: optionalString(row.removed_at),
+  };
+}
+
+export function insertWorkspace(db: DatabaseSync, workspace: Workspace): void {
+  db.prepare(
+    `INSERT INTO workspaces (id, goal_id, work_item_id, repo, repo_dir, base_branch, branch,
+      path, status, created_at, removed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    workspace.id,
+    workspace.goalId,
+    workspace.workItemId,
+    workspace.repo,
+    workspace.repoDir,
+    workspace.baseBranch,
+    workspace.branch,
+    workspace.path,
+    workspace.status,
+    workspace.createdAt,
+    workspace.removedAt ?? null,
+  );
+}
+
+export function getWorkspace(db: DatabaseSync, id: string): Workspace | undefined {
+  const row = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as Row | undefined;
+  return row ? workspaceFromRow(row) : undefined;
+}
+
+export function findActiveWorkspace(
+  db: DatabaseSync,
+  goalId: string,
+  workItemId: string,
+): Workspace | undefined {
+  const row = db
+    .prepare("SELECT * FROM workspaces WHERE goal_id = ? AND work_item_id = ? AND status = 'active'")
+    .get(goalId, workItemId) as Row | undefined;
+  return row ? workspaceFromRow(row) : undefined;
+}
+
+export function listWorkspaces(
+  db: DatabaseSync,
+  filter: { goalId?: string; status?: WorkspaceStatus } = {},
+): Workspace[] {
+  const conditions: string[] = [];
+  const params: string[] = [];
+  if (filter.goalId) {
+    conditions.push('goal_id = ?');
+    params.push(filter.goalId);
+  }
+  if (filter.status) {
+    conditions.push('status = ?');
+    params.push(filter.status);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return (
+    db.prepare(`SELECT * FROM workspaces${where} ORDER BY created_at ASC`).all(...params) as Row[]
+  ).map(workspaceFromRow);
+}
+
+export function markWorkspaceRemoved(db: DatabaseSync, id: string, at: string): number {
+  const result = db
+    .prepare("UPDATE workspaces SET status = 'removed', removed_at = ? WHERE id = ? AND status = 'active'")
+    .run(at, id);
+  return Number(result.changes);
 }
