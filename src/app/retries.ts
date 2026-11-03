@@ -111,20 +111,28 @@ export interface FailedCheck {
   status: ExecutorStatus;
 }
 
+/** 常见网络/依赖不可达特征；命中时按环境失败处理，不消耗实现者重试次数。 */
+const ENVIRONMENT_PATTERN =
+  /reconnecting|request timed out|stream disconnected|error sending request|econnrefused|enotfound|etimedout|eai_again|network/i;
+
 /**
  * 从一次运行结果推导失败类型与原因键。
  *
- * 超时与无法启动归为环境问题，不计入实现者失败次数；
- * 非零退出与自检不通过归为同一类实现失败。
+ * 超时、无法启动与网络类退出归为环境问题，不计入实现者失败次数；
+ * 其余非零退出与自检不通过归为同一类实现失败。
  */
 export function classifyRunFailure(
   agentStatus: ExecutorStatus,
   failedChecks: FailedCheck[],
+  agentStderr = '',
 ): { failureKind: FailureKind; causeKey: string } | undefined {
   if (agentStatus !== 'succeeded') {
-    return agentStatus === 'failed'
-      ? { failureKind: 'implementation', causeKey: 'agent:failed' }
-      : { failureKind: 'environment', causeKey: `agent:${agentStatus}` };
+    if (agentStatus !== 'failed') {
+      return { failureKind: 'environment', causeKey: `agent:${agentStatus}` };
+    }
+    return ENVIRONMENT_PATTERN.test(agentStderr)
+      ? { failureKind: 'environment', causeKey: 'agent:environment' }
+      : { failureKind: 'implementation', causeKey: 'agent:failed' };
   }
 
   const check = failedChecks[0];

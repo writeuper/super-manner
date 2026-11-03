@@ -320,6 +320,7 @@ export async function runBuilder(
   const failure = classifyRunFailure(
     agentResult.status,
     failedChecks.map((check) => ({ name: check.name, status: check.status })),
+    agentResult.stderr,
   );
   const reason =
     agentResult.status !== 'succeeded'

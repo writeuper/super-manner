@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { detectSelfChecks, runBuilder } from '../src/app/builder.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
-import { resetBuilderRetry } from '../src/app/retries.ts';
+import { resetBuilderRetry, classifyRunFailure } from '../src/app/retries.ts';
 import type { Executor, ExecutorRequest, ExecutorResult, ExecutorStatus } from '../src/domain/executor.ts';
 import type { WorkItem } from '../src/domain/types.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
@@ -342,6 +342,17 @@ test('不同失败原因不会累积', async () => {
   assert.equal(third.status, 'failed');
   assert.notEqual(third.status, 'blocked');
   assert.equal(executor.calls.filter((call) => call.command === 'fake-agent').length, 3);
+});
+
+test('网络类退出归为环境失败', () => {
+  assert.deepEqual(
+    classifyRunFailure('failed', [], 'ERROR: stream disconnected before completion'),
+    { failureKind: 'environment', causeKey: 'agent:environment' },
+  );
+  assert.deepEqual(classifyRunFailure('failed', [], '断言失败'), {
+    failureKind: 'implementation',
+    causeKey: 'agent:failed',
+  });
 });
 
 test('自检命令按 package.json 与锁文件探测', () => {

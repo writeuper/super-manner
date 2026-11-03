@@ -234,7 +234,9 @@ P0 只区分两类，够用且不猜测：
 | 类型 | 来源 | 是否计入实现者失败 |
 | --- | --- | --- |
 | `implementation` | Agent 非零退出、自检不通过 | 是 |
-| `environment` | 超时、无法启动（`spawn_error`） | 否 |
+| `environment` | 超时、无法启动（`spawn_error`）、网络不可达 | 否 |
+
+网络类失败按 Agent stderr 的关键词识别（`reconnecting`、`request timed out`、`stream disconnected`、`ECONNREFUSED`、`ENOTFOUND`、`ETIMEDOUT`、`EAI_AGAIN` 等），归为 `environment` 且 `causeKey` 记为 `agent:environment`。这是启发式判断，不做重试补偿。
 
 同一原因用 `causeKey` 表示：`agent:failed`、`self-check:<name>` 等。四类完整分类与恢复策略留给 S4-04。
 
@@ -304,6 +306,7 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 | S2-05 推送与失败证据 | `delivery.test.ts` · 推送自有分支到远端 / 未获 repo.push 授权时不推送 / 远端不可达时推送标记为失败 |
 | S2-06 同因两次转人 | `builder.test.ts` · 同一原因连续失败两次后转人工 |
 | S2-06 环境失败不计入 | `builder.test.ts` · 环境失败不计入同因次数 |
+| S2-06 网络类失败归为环境 | `builder.test.ts` · 网络类退出归为环境失败 |
 | S2-06 换因不累积 | `builder.test.ts` · 不同失败原因不会累积 |
 | S2-06 重置保留历史 | `builder.test.ts` · 人工重置后可以继续重试，历史仍保留 |
 
@@ -313,7 +316,7 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 | --- | --- | --- |
 | 文件级写拦截 | 整次 run 以 `repo.write` 放行，靠 commit 前路径校验兜底 | 需要更细粒度时在网关前加文件钩子 |
 | PR 创建 | 只推送分支，PR 由人工创建并关联工作项 | 后续接入 GitHub API |
-| 失败分类 | 只区分实现与环境，非零退出统一视为实现失败 | S4-04 |
+| 失败分类 | 只区分实现与环境；非零退出默认视为实现失败，网络类靠 stderr 关键词启发式归为环境 | S4-04 |
 | 转人后的恢复 | 需人工执行 `builder reset`，未自动创建升级单 | S4-04 |
 | 预算计量 | 只把 `maxTokens` 带入角色实例，未累计真实消耗 | S4-03 |
 | 多进程并发 | 同一工作项由数据库唯一索引兜底，未做跨进程租约 | 视需要 |
