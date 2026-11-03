@@ -1,0 +1,19 @@
+{
+  "name": "super-manner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An autonomous multi-agent coding team: goal contracts, action-level grants, independent verification, and self-improving playbooks.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "manner": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
