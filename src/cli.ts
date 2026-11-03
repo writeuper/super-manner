@@ -10,6 +10,7 @@ import { cleanupWorkspace, createWorkspace } from './app/workspaces.ts';
 import { runBuilder, type BuilderRunResult } from './app/builder.ts';
 import { commitWorkspace, pushWorkspace } from './app/delivery.ts';
 import { resetBuilderRetry } from './app/retries.ts';
+import { buildVerifierContext } from './app/verification.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
@@ -141,6 +142,7 @@ const USAGE = `Super-Manner CLI
   manner builder commit --goal <id> --item <workItemId> [--message <text>] [--by <id>]
   manner builder push --goal <id> --item <workItemId> [--remote origin] [--by <id>]
   manner builder reset --goal <id> --item <workItemId> [--reason <text>] [--by <id>]
+  manner verify context --goal <id> --item <workItemId> [--by <id>]
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -340,6 +342,20 @@ async function main(): Promise<void> {
               goalId: required(args, 'goal'),
               workItemId: required(args, 'item'),
               reason: one(args, 'reason'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        break;
+      }
+
+      case 'verify': {
+        if (subcommand === 'context') {
+          print(
+            buildVerifierContext(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
               actor: one(args, 'by'),
             }),
           );
