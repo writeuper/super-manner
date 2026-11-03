@@ -242,3 +242,34 @@ manner budget extend --goal <goalId> --tokens <n> --by <id>
 | 时间线可按目标、人、动作过滤并保留时间顺序 | 目标/执行者/载荷动作/事件类型/最近 N 条 |
 | 待我处理队列汇总待审计划、待裁决升级与待验收目标 | 三类聚合、动作过滤、只读性 |
 | 过期升级不进入待办队列 | 到期后不再出现在待办中 |
+
+## 8. S4-07 P0 验收演练
+
+演练用真实目标、真实 SQLite 与临时 git 远端走完整旅程，执行层用脚本化 Executor 保证可重复；
+真实模型执行已在 S2-07 验证。用例位于 `test/journey.test.ts`。
+
+### 8.1 旅程步骤
+
+| 步骤 | 断言 |
+| --- | --- |
+| 目标录入、提交并批准计划 | 计划为 approved，Grant 已签发 |
+| 暂停与恢复 | 状态 `executing → paused → executing` |
+| Builder 实现与自检 | 运行成功，改动为 `src/login.ts` |
+| 提交并推送 | commit / push 成功，检查点依次为 `builder_run`、`commit`、`push` |
+| 采集证据并逐条判定 | 验收标准与 DoD 全部通过 |
+| 完成判定与验收视图 | 目标 `complete=true`，视图含标准与差异 |
+| 人工接受 | 目标 completed，全部 Grant 吊销 |
+| 生成复盘 | 预算 120/2000、无失败、暂停记为偏差、接受记为介入 |
+| 时间线与待办 | 可按人查到暂停与复盘；终态后队列为空 |
+| 审计完整性 | `verifyAuditChain` 通过，推送记录存在 |
+
+### 8.2 场景覆盖
+
+| 需求分组 | 覆盖用例 |
+| --- | --- |
+| 第 4 节 S1 出口场景 | `policy.test.ts`、`flow.test.ts`、`escalations` 相关用例 |
+| 第 5 节 S2 隔离执行 | `workspaces`、`executor`、`builder`、`delivery`、`e2e-rework` |
+| 第 6 节 S3 验证验收 | `verification`、`evidence`、`verdicts`、`completion`、`acceptance`、`e2e-rework` |
+| 第 7 节 S4 生命周期 | `lifecycle`、`budget`、`failures`、`review`、`audit-query`、`journey` |
+
+`pnpm test` 全量通过即认为第 4、5、6、7 节场景全过。
