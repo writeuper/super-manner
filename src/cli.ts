@@ -40,14 +40,23 @@ function parseArgs(argv: string[]): ParsedArgs {
       positional.push(token);
       continue;
     }
-    const name = token.slice(2);
+    const raw = token.slice(2);
+    const equals = raw.indexOf('=');
+    const name = equals === -1 ? raw : raw.slice(0, equals);
+    const push = (value: string): void => {
+      const existing = flags.get(name);
+      if (existing === undefined) flags.set(name, value);
+      else if (Array.isArray(existing)) existing.push(value);
+      else if (typeof existing === 'string') flags.set(name, [existing, value]);
+      else flags.set(name, [value]);
+    };
+    if (equals !== -1) {
+      push(raw.slice(equals + 1));
+      continue;
+    }
     const next = argv[index + 1];
     if (next !== undefined && !next.startsWith('--')) {
-      const existing = flags.get(name);
-      if (existing === undefined) flags.set(name, next);
-      else if (Array.isArray(existing)) existing.push(next);
-      else if (typeof existing === 'string') flags.set(name, [existing, next]);
-      else flags.set(name, [next]);
+      push(next);
       index += 1;
     } else {
       flags.set(name, true);
@@ -139,6 +148,7 @@ const USAGE = `Super-Manner CLI
   manner role instantiate --goal <id> --item <workItemId> [--by <id>]
   manner builder run --goal <id> --item <workItemId> [--repo-dir <path>] [--worktree-root <dir>]
                      [--agent codex] [--agent-arg <arg> ...] [--timeout <ms>] [--by <id>]
+                     （参数本身以 -- 开头时写成 --agent-arg=--sandbox）
   manner builder commit --goal <id> --item <workItemId> [--message <text>] [--by <id>]
   manner builder push --goal <id> --item <workItemId> [--remote origin] [--by <id>]
   manner builder reset --goal <id> --item <workItemId> [--reason <text>] [--by <id>]
@@ -305,7 +315,7 @@ async function main(): Promise<void> {
                 agentArgs.length > 0
                   ? agentArgs
                   : (one(args, 'agent') ?? 'codex') === 'codex'
-                    ? ['exec', '--sandbox', 'workspace-write', '-']
+                    ? ['exec', '--sandbox', 'workspace-write']
                     : [],
               ...(timeoutMs === undefined ? {} : { timeoutMs }),
             },

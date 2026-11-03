@@ -355,6 +355,28 @@ test('网络类退出归为环境失败', () => {
   });
 });
 
+test('Agent 成功但没有改动时视为失败', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const executor = new FakeExecutor();
+
+  const result = await runBuilder(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+    selfChecks: [],
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failureKind, 'implementation');
+  assert.equal(result.retry.sameCauseFailures, 0);
+  assert.match(result.reason, /没有产生任何改动/);
+});
+
 test('自检命令按 package.json 与锁文件探测', () => {
   const dir = mkdtempSync(join(tmpdir(), 'manner-checks-'));
   tempRoots.push(dir);

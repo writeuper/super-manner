@@ -280,7 +280,7 @@ manner builder push --goal <goalId> --item build --by builder-1
 manner builder reset --goal <goalId> --item build --reason "已调整方案" --by human
 ```
 
-`builder run` 默认执行 `codex exec --sandbox workspace-write -`；换 Agent 时用 `--agent` 与可重复的 `--agent-arg` 覆盖。
+`builder run` 默认执行 `codex exec --sandbox workspace-write`，提示词经 stdin 传入（不追加 `-` 参数，codex 0.147 不接受该占位符）；换 Agent 时用 `--agent` 与可重复的 `--agent-arg` 覆盖。
 
 ## 10. 测试映射
 
@@ -301,6 +301,7 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 | S2-04 无 `repo.write` 不启动 Agent | `builder.test.ts` · 没有 repo.write 授权时不启动 Agent |
 | S2-04 失败不混入自检 | `builder.test.ts` · Agent 失败时不运行自检并返回失败原因 / 自检失败时整体判定为失败 |
 | S2-04 自检命令探测 | `builder.test.ts` · 自检命令按 package.json 与锁文件探测 |
+| S2-04 空改动判失败 | `builder.test.ts` · Agent 成功但没有改动时视为失败 |
 | S2-05 提交与范围校验 | `delivery.test.ts` · 提交授权范围内的改动并写入审计 / 没有改动时返回 no_changes / 改动超出授权路径时拒绝提交 |
 | S2-05 未授权提交被拒绝 | `delivery.test.ts` · 未获 repo.commit 授权时不写入 git 状态 |
 | S2-05 推送与失败证据 | `delivery.test.ts` · 推送自有分支到远端 / 未获 repo.push 授权时不推送 / 远端不可达时推送标记为失败 |
@@ -322,3 +323,5 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 | 多进程并发 | 同一工作项由数据库唯一索引兜底，未做跨进程租约 | 视需要 |
 | worktree 回收 | 依赖显式 cleanup，未做目标取消时的自动回收 | S4-02 |
 | 推送后验证 | 未自动确认远端分支与 PR 状态 | S3 / S2-07 |
+| Agent 自带沙箱 | codex 的 `workspace-write` 依赖 bubblewrap；在缺少 `CAP_NET_ADMIN` 的容器里 bwrap 无法建回环，端到端改用 `danger-full-access`，隔离由 worktree 与网关承担 | 宿主具备 bwrap 时恢复 `workspace-write` |
+| 空改动 | Agent 退出码 0 但没有任何文件改动时判为失败（`agent:no_changes`），避免"看起来成功" | 分析类工作项需要单独类型 |

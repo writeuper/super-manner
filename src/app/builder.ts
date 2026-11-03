@@ -260,7 +260,7 @@ export async function runBuilder(
     };
   }
 
-  const agent = input.agent ?? { command: 'codex', args: ['exec', '--sandbox', 'workspace-write', '-'] };
+  const agent = input.agent ?? { command: 'codex', args: ['exec', '--sandbox', 'workspace-write'] };
   const timeoutMs = agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS;
 
   appendAudit(
@@ -315,21 +315,28 @@ export async function runBuilder(
   const diffStat = runGit(['diff', '--stat'], { cwd: workspace.path }).stdout.trim();
 
   const failedChecks = selfChecks.filter((check) => check.status !== 'succeeded');
+  // Agent 退出码为 0 但一个文件都没改，通常意味着它没真正执行；不能算成功。
+  const noChanges = changedFiles.length === 0;
   const status: BuilderRunStatus =
-    agentResult.status === 'succeeded' && failedChecks.length === 0 ? 'succeeded' : 'failed';
-  const failure = classifyRunFailure(
-    agentResult.status,
-    failedChecks.map((check) => ({ name: check.name, status: check.status })),
-    agentResult.stderr,
-  );
+    agentResult.status === 'succeeded' && failedChecks.length === 0 && !noChanges
+      ? 'succeeded'
+      : 'failed';
+  const failure =
+    classifyRunFailure(
+      agentResult.status,
+      failedChecks.map((check) => ({ name: check.name, status: check.status })),
+      agentResult.stderr,
+    ) ?? (status === 'failed' ? { failureKind: 'implementation' as const, causeKey: 'agent:no_changes' } : undefined);
   const reason =
     agentResult.status !== 'succeeded'
       ? `模型执行失败：${agentResult.status}（退出码 ${agentResult.exitCode ?? '无'}）`
       : failedChecks.length > 0
         ? `自检未通过：${failedChecks.map((check) => check.name).join(', ')}`
-        : selfChecks.length > 0
-          ? `执行成功，自检通过（${selfChecks.length}/${selfChecks.length}）`
-          : '执行成功，未配置自检';
+        : noChanges
+          ? '执行完成但没有产生任何改动'
+          : selfChecks.length > 0
+            ? `执行成功，自检通过（${selfChecks.length}/${selfChecks.length}）`
+            : '执行成功，未配置自检';
 
   const finishedAt = new Date().toISOString();
   appendAudit(
