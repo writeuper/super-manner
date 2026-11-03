@@ -1,9 +1,9 @@
 # S2 隔离执行设计
 
-> 状态：S2-01～S2-05 已实现（2026-11-03）· 对应 FR-05 / FR-06
+> 状态：S2-01～S2-06 已实现（2026-11-03）· 对应 FR-05 / FR-06
 > 依据：[P0 实现任务拆解](../p0-plan.md) 第 5 节 · 前置：[S1 治理内核设计](s1-governance.md)
 
-S2 把执行者从"测试里的脚本"换成"可以被隔离、被约束、被替换的角色"。当前已覆盖工作区隔离、执行器契约、角色实例化，以及 Builder 运行与提交/推送。PR 创建在 P0 由人工完成。
+S2 把执行者从"测试里的脚本"换成"可以被隔离、被约束、被替换的角色"。当前已覆盖工作区隔离、执行器契约、角色实例化、Builder 运行、提交/推送与失败重试。PR 创建在 P0 由人工完成。
 
 ## 1. 目标与非目标
 
@@ -15,10 +15,11 @@ S2 把执行者从"测试里的脚本"换成"可以被隔离、被约束、被�
 - 角色按 playbook 装载，装载时校验其动作能力与 Grant 一致。
 - Builder 在授权工作区内调用本地 CLI Agent，产出改动与自检结果。
 - 提交与推送前再次经过网关，所有交付动作可审计。
+- 同一原因连续失败两次转人工，环境失败不计入次数。
 
 **非目标（留给后续任务）**
 
-- 失败分类与自动重试（S2-06 / S4-04）。
+- 四类失败分类与恢复策略（S4-04；P0 只区分实现与环境）。
 - PR 创建自动化与 PR 关联工作项（P0 人工创建 PR）。
 - 独立验证上下文与证据采集（S3）。
 - 按 token 的预算计量与耗尽暂停（S4-03）。
@@ -39,6 +40,7 @@ src/
 │   ├── workspaces.ts  worktree 生命周期
 │   ├── roles.ts       playbook 与角色实例化
 │   ├── builder.ts     Builder 编排：Agent、自检、差异采集
+│   ├── retries.ts     失败分类与重试状态
 │   └── delivery.ts    commit / push
 └── cli.ts             workspace / role / builder 子命令
 ```
@@ -223,7 +225,35 @@ interface RoleInstance {
 
 P0 只保证分支可达；PR 由人工创建并关联工作项，自动化 PR 留给后续任务。
 
-## 8. CLI
+## 8. 失败重试（S2-06）
+
+### 8.1 失败分类
+
+P0 只区分两类，够用且不猜测：
+
+| 类型 | 来源 | 是否计入实现者失败 |
+| --- | --- | --- |
+| `implementation` | Agent 非零退出、自检不通过 | 是 |
+| `environment` | 超时、无法启动（`spawn_error`） | 否 |
+
+同一原因用 `causeKey` 表示：`agent:failed`、`self-check:<name>` 等。四类完整分类与恢复策略留给 S4-04。
+
+### 8.2 重试状态从审计推导
+
+`assessBuilderRetry` 从审计链读取 `builder.run_finished`，不新增可变状态表：
+
+- 从最新一条往前累计，成功即停止；
+- 环境失败跳过，不计数也不打断连续性；
+- `causeKey` 变化即停止；
+- 连续同因失败达到 2 次，`blocked = true`。
+
+`runBuilder` 在请求网关前检查该状态：已阻塞时不再启动 Agent，记 `builder.retry_blocked`，返回 `blocked` 让人类接手。
+
+### 8.3 人工重置
+
+`manner builder reset` 追加一条 `builder.retry_cleared`：只影响之后的重试计数，不删除任何历史失败与证据。重置后从零开始累计。
+
+## 9. CLI
 
 ```bash
 # 为工作项创建 worktree
@@ -243,11 +273,14 @@ manner builder run --goal <goalId> --item build --repo-dir ~/src/demo --by build
 # 提交与推送（PR 由人工创建）
 manner builder commit --goal <goalId> --item build --message "feat: ..." --by builder-1
 manner builder push --goal <goalId> --item build --by builder-1
+
+# 人工接手后重置重试计数（历史保留）
+manner builder reset --goal <goalId> --item build --reason "已调整方案" --by human
 ```
 
 `builder run` 默认执行 `codex exec --sandbox workspace-write -`；换 Agent 时用 `--agent` 与可重复的 `--agent-arg` 覆盖。
 
-## 9. 测试映射
+## 10. 测试映射
 
 | 任务 | 测试 |
 | --- | --- |
@@ -269,14 +302,19 @@ manner builder push --goal <goalId> --item build --by builder-1
 | S2-05 提交与范围校验 | `delivery.test.ts` · 提交授权范围内的改动并写入审计 / 没有改动时返回 no_changes / 改动超出授权路径时拒绝提交 |
 | S2-05 未授权提交被拒绝 | `delivery.test.ts` · 未获 repo.commit 授权时不写入 git 状态 |
 | S2-05 推送与失败证据 | `delivery.test.ts` · 推送自有分支到远端 / 未获 repo.push 授权时不推送 / 远端不可达时推送标记为失败 |
+| S2-06 同因两次转人 | `builder.test.ts` · 同一原因连续失败两次后转人工 |
+| S2-06 环境失败不计入 | `builder.test.ts` · 环境失败不计入同因次数 |
+| S2-06 换因不累积 | `builder.test.ts` · 不同失败原因不会累积 |
+| S2-06 重置保留历史 | `builder.test.ts` · 人工重置后可以继续重试，历史仍保留 |
 
-## 10. 已知边界
+## 11. 已知边界
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
 | 文件级写拦截 | 整次 run 以 `repo.write` 放行，靠 commit 前路径校验兜底 | 需要更细粒度时在网关前加文件钩子 |
 | PR 创建 | 只推送分支，PR 由人工创建并关联工作项 | 后续接入 GitHub API |
-| 失败分类 | 只区分超时/失败/启动错误，未区分实现与环境 | S2-06 / S4-04 |
+| 失败分类 | 只区分实现与环境，非零退出统一视为实现失败 | S4-04 |
+| 转人后的恢复 | 需人工执行 `builder reset`，未自动创建升级单 | S4-04 |
 | 预算计量 | 只把 `maxTokens` 带入角色实例，未累计真实消耗 | S4-03 |
 | 多进程并发 | 同一工作项由数据库唯一索引兜底，未做跨进程租约 | 视需要 |
 | worktree 回收 | 依赖显式 cleanup，未做目标取消时的自动回收 | S4-02 |

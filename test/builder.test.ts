@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { detectSelfChecks, runBuilder } from '../src/app/builder.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
-import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
+import { resetBuilderRetry } from '../src/app/retries.ts';
+import type { Executor, ExecutorRequest, ExecutorResult, ExecutorStatus } from '../src/domain/executor.ts';
 import type { WorkItem } from '../src/domain/types.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import {
@@ -198,6 +199,149 @@ test('没有活跃工作区且未提供仓库路径时拒绝运行', async () =>
       }),
     /没有活跃工作区/,
   );
+});
+
+test('同一原因连续失败两次后转人工', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const executor = new FakeExecutor((request) =>
+    request.command === 'fake-agent' ? { status: 'failed', exitCode: 1, stderr: '断言失败' } : {},
+  );
+  const input = {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+  };
+
+  const first = await runBuilder(db, input);
+  assert.equal(first.status, 'failed');
+  assert.equal(first.failureKind, 'implementation');
+  assert.equal(first.retry.blocked, false);
+
+  const second = await runBuilder(db, input);
+  assert.equal(second.status, 'failed');
+  assert.equal(second.retry.sameCauseFailures, 1);
+
+  const third = await runBuilder(db, input);
+  assert.equal(third.status, 'blocked');
+  assert.match(third.reason, /同一原因连续失败 2 次/);
+  assert.equal(third.agent, null);
+  assert.equal(executor.calls.length, 2);
+
+  const events = listAuditEvents(db, goal.id);
+  assert.equal(events.filter((event) => event.type === 'builder.run_finished').length, 2);
+  assert.equal(events.filter((event) => event.type === 'builder.retry_blocked').length, 1);
+});
+
+test('人工重置后可以继续重试，历史仍保留', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const executor = new FakeExecutor((request) =>
+    request.command === 'fake-agent' ? { status: 'failed', exitCode: 1 } : {},
+  );
+  const input = {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+  };
+
+  await runBuilder(db, input);
+  await runBuilder(db, input);
+  assert.equal((await runBuilder(db, input)).status, 'blocked');
+
+  const reset = resetBuilderRetry(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    actor: 'human',
+    reason: '已调整实现方案',
+  });
+  assert.equal(reset.blocked, false);
+  assert.equal(reset.sameCauseFailures, 0);
+
+  const next = await runBuilder(db, input);
+  assert.equal(next.status, 'failed');
+  assert.equal(executor.calls.length, 3);
+
+  const events = listAuditEvents(db, goal.id);
+  assert.equal(events.filter((event) => event.type === 'builder.run_finished').length, 3);
+  assert.equal(events.filter((event) => event.type === 'builder.retry_cleared').length, 1);
+});
+
+test('环境失败不计入同因次数', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const statuses: ExecutorStatus[] = ['spawn_error', 'spawn_error', 'failed', 'failed'];
+  const executor = new FakeExecutor((request) => {
+    if (request.command !== 'fake-agent') return {};
+    const status = statuses.shift() ?? 'succeeded';
+    return { status, exitCode: status === 'failed' ? 1 : null };
+  });
+  const input = {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+  };
+
+  assert.equal((await runBuilder(db, input)).failureKind, 'environment');
+  assert.equal((await runBuilder(db, input)).failureKind, 'environment');
+  assert.equal((await runBuilder(db, input)).status, 'failed');
+  const fourth = await runBuilder(db, input);
+  assert.equal(fourth.status, 'failed');
+  assert.equal(fourth.retry.sameCauseFailures, 1);
+
+  const fifth = await runBuilder(db, input);
+  assert.equal(fifth.status, 'blocked');
+  assert.equal(executor.calls.length, 4);
+});
+
+test('不同失败原因不会累积', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  let agentStatus: ExecutorStatus = 'failed';
+  let checkStatus: ExecutorStatus = 'succeeded';
+  const executor = new FakeExecutor((request) => {
+    if (request.command === 'fake-agent') {
+      return { status: agentStatus, exitCode: agentStatus === 'failed' ? 1 : 0 };
+    }
+    return { status: checkStatus, exitCode: checkStatus === 'failed' ? 1 : 0 };
+  });
+  const input = {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+    selfChecks: [{ name: 'typecheck', command: 'fake-typecheck' }],
+  };
+
+  assert.equal((await runBuilder(db, input)).failureKind, 'implementation');
+
+  agentStatus = 'succeeded';
+  checkStatus = 'failed';
+  const second = await runBuilder(db, input);
+  assert.equal(second.status, 'failed');
+  assert.equal(second.failureKind, 'implementation');
+
+  agentStatus = 'failed';
+  checkStatus = 'succeeded';
+  const third = await runBuilder(db, input);
+  assert.equal(third.status, 'failed');
+  assert.notEqual(third.status, 'blocked');
+  assert.equal(executor.calls.filter((call) => call.command === 'fake-agent').length, 3);
 });
 
 test('自检命令按 package.json 与锁文件探测', () => {

@@ -12,6 +12,12 @@ import { getGoalOrThrow } from './goals.ts';
 import { requestAction } from './gateway.ts';
 import { getApprovedPlan } from './plans.ts';
 import { instantiateRole, type RoleInstance } from './roles.ts';
+import {
+  assessBuilderRetry,
+  classifyRunFailure,
+  type FailureKind,
+  type RetryState,
+} from './retries.ts';
 import { createWorkspace } from './workspaces.ts';
 
 export const DEFAULT_AGENT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -53,7 +59,7 @@ export interface SelfCheckResult {
   stderr: string;
 }
 
-export type BuilderRunStatus = 'denied' | 'succeeded' | 'failed';
+export type BuilderRunStatus = 'denied' | 'blocked' | 'succeeded' | 'failed';
 
 export interface BuilderRunResult {
   runId: string;
@@ -68,6 +74,10 @@ export interface BuilderRunResult {
   selfChecks: SelfCheckResult[];
   changedFiles: string[];
   diffStat: string;
+  /** 本次运行前的重试状态，用于判断是否已接近转人阈值。 */
+  retry: RetryState;
+  /** 本次运行的失败分类；成功或未运行时为空。 */
+  failureKind?: FailureKind;
 }
 
 /** 把目标、工作项与授权压成一段可执行提示词，避免 Agent 自行猜测边界。 */
@@ -176,6 +186,42 @@ export async function runBuilder(
   }
 
   const runId = randomUUID();
+  const retry = assessBuilderRetry(db, goal.id, item.id);
+  if (retry.blocked) {
+    appendAudit(
+      db,
+      {
+        actor: input.actor ?? role.subject,
+        type: 'builder.retry_blocked',
+        goalId: goal.id,
+        subject: role.subject,
+        payload: {
+          runId,
+          workItemId: item.id,
+          sameCauseFailures: retry.sameCauseFailures,
+          causeKey: retry.causeKey,
+          reason: retry.reason,
+        },
+      },
+      now.toISOString(),
+    );
+    return {
+      runId,
+      status: 'blocked',
+      reason: retry.reason ?? '同一原因连续失败，已转人工处理',
+      goalId: goal.id,
+      workItemId: item.id,
+      workspaceId: workspace.id,
+      branch: workspace.branch,
+      role,
+      agent: null,
+      selfChecks: [],
+      changedFiles: [],
+      diffStat: '',
+      retry,
+    };
+  }
+
   const resource: ResourceRef = { repo: goal.repo, branch: workspace.branch };
   const pathScope = role.scope.paths?.[0];
   if (pathScope) resource.path = pathScope;
@@ -210,6 +256,7 @@ export async function runBuilder(
       selfChecks: [],
       changedFiles: [],
       diffStat: '',
+      retry,
     };
   }
 
@@ -270,6 +317,10 @@ export async function runBuilder(
   const failedChecks = selfChecks.filter((check) => check.status !== 'succeeded');
   const status: BuilderRunStatus =
     agentResult.status === 'succeeded' && failedChecks.length === 0 ? 'succeeded' : 'failed';
+  const failure = classifyRunFailure(
+    agentResult.status,
+    failedChecks.map((check) => ({ name: check.name, status: check.status })),
+  );
   const reason =
     agentResult.status !== 'succeeded'
       ? `模型执行失败：${agentResult.status}（退出码 ${agentResult.exitCode ?? '无'}）`
@@ -294,6 +345,7 @@ export async function runBuilder(
         executorStatus: agentResult.status,
         exitCode: agentResult.exitCode,
         durationMs: agentResult.durationMs,
+        ...(failure ?? {}),
         selfChecks: selfChecks.map((check) => ({
           name: check.name,
           status: check.status,
@@ -321,5 +373,7 @@ export async function runBuilder(
     selfChecks,
     changedFiles,
     diffStat,
+    retry,
+    ...(failure ? { failureKind: failure.failureKind } : {}),
   };
 }
