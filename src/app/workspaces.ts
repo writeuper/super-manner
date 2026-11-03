@@ -2,17 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Goal, Plan, Workspace } from '../domain/types.ts';
+import type { Goal, Workspace } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
 import { branchExists, isGitRepository, runGit, runGitOrThrow } from '../infra/git.ts';
 import {
   findActiveWorkspace,
   getWorkspace,
   insertWorkspace,
-  listPlansForGoal,
   markWorkspaceRemoved,
 } from '../infra/store.ts';
 import { getGoalOrThrow } from './goals.ts';
+import { getApprovedPlan } from './plans.ts';
 
 /** 工作区的分支命名同时满足授权里的 `feature/sm-*` 范围。 */
 export function branchNameFor(goalId: string, workItemId: string): string {
@@ -28,11 +28,13 @@ function sanitize(value: string): string {
   return cleaned || 'item';
 }
 
-function approvedPlan(db: DatabaseSync, goalId: string): Plan | undefined {
-  return listPlansForGoal(db, goalId)
-    .filter((plan) => plan.status === 'approved')
-    .at(-1);
-}
+
+
+
+
+
+
+
 
 export interface CreateWorkspaceInput {
   goalId: string;
@@ -62,7 +64,7 @@ export function createWorkspace(
     throw new Error(`目标当前状态不能创建工作区：${goal.status}`);
   }
 
-  const plan = approvedPlan(db, goal.id);
+  const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能创建工作区');
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
   if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);

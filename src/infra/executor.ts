@@ -61,8 +61,12 @@ export function createLocalExecutor(options: LocalExecutorOptions = {}): Executo
         const child = spawn(request.command, request.args ?? [], {
           cwd: request.cwd,
           env: { ...process.env, ...request.env },
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
         });
+
+        // 子进程可能不读取 stdin 就退出，忽略 EPIPE。
+        child.stdin.on('error', () => {});
+        child.stdin.end(request.stdin ?? '');
 
         child.stdout.setEncoding('utf8');
         child.stderr.setEncoding('utf8');

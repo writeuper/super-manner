@@ -7,10 +7,14 @@ import { decideEscalation, sweepExpiredEscalations } from './app/escalations.ts'
 import { requestAction } from './app/gateway.ts';
 import { instantiateRole } from './app/roles.ts';
 import { cleanupWorkspace, createWorkspace } from './app/workspaces.ts';
+import { runBuilder, type BuilderRunResult } from './app/builder.ts';
+import { commitWorkspace, pushWorkspace } from './app/delivery.ts';
 import { isAction } from './domain/actions.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
 import { openDatabase } from './infra/db.ts';
+import { createLocalExecutor } from './infra/executor.ts';
+import { tailText } from './infra/text.ts';
 import {
   getGoal,
   listEscalations,
@@ -78,6 +82,28 @@ function print(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
+/** 摘要输出：只保留尾部日志，避免把完整 Agent 输出刷到终端。 */
+function printBuilderRun(result: BuilderRunResult): void {
+  print({
+    ...result,
+    role: { id: result.role.id, role: result.role.role, subject: result.role.subject, actions: result.role.actions },
+    agent: result.agent
+      ? {
+          status: result.agent.status,
+          exitCode: result.agent.exitCode,
+          durationMs: result.agent.durationMs,
+          stdoutTail: tailText(result.agent.stdout, 1000),
+          stderrTail: tailText(result.agent.stderr, 1000),
+        }
+      : null,
+    selfChecks: result.selfChecks.map((check) => ({
+      ...check,
+      stdout: tailText(check.stdout, 500),
+      stderr: tailText(check.stderr, 500),
+    })),
+  });
+}
+
 function printGoal(db: DatabaseSync, goalId: string): void {
   const goal = getGoalOrThrow(db, goalId);
   print({
@@ -109,6 +135,10 @@ const USAGE = `Super-Manner CLI
   manner workspace list [--goal <id>] [--active]
   manner workspace cleanup <workspaceId> [--delete-branch] [--force] [--by <id>]
   manner role instantiate --goal <id> --item <workItemId> [--by <id>]
+  manner builder run --goal <id> --item <workItemId> [--repo-dir <path>] [--worktree-root <dir>]
+                     [--agent codex] [--agent-arg <arg> ...] [--timeout <ms>] [--by <id>]
+  manner builder commit --goal <id> --item <workItemId> [--message <text>] [--by <id>]
+  manner builder push --goal <id> --item <workItemId> [--remote origin] [--by <id>]
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
   manner escalation sweep
@@ -117,7 +147,7 @@ const USAGE = `Super-Manner CLI
   manner audit verify
 `;
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const [command, subcommand, third] = args.positional;
   if (!command || command === 'help') {
@@ -251,6 +281,60 @@ function main(): void {
         break;
       }
 
+      case 'builder': {
+        if (subcommand === 'run') {
+          const timeout = one(args, 'timeout');
+          const timeoutMs = timeout === undefined ? undefined : Number(timeout);
+          if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+            throw new Error(`--timeout 必须是正整数：${timeout}`);
+          }
+          const agentArgs = many(args, 'agent-arg');
+          const result = await runBuilder(db, {
+            goalId: required(args, 'goal'),
+            workItemId: required(args, 'item'),
+            executor: createLocalExecutor(),
+            repoDir: one(args, 'repo-dir'),
+            worktreeRoot: one(args, 'worktree-root'),
+            agent: {
+              command: one(args, 'agent') ?? 'codex',
+              args:
+                agentArgs.length > 0
+                  ? agentArgs
+                  : (one(args, 'agent') ?? 'codex') === 'codex'
+                    ? ['exec', '--sandbox', 'workspace-write', '-']
+                    : [],
+              ...(timeoutMs === undefined ? {} : { timeoutMs }),
+            },
+            actor: one(args, 'by'),
+          });
+          printBuilderRun(result);
+          return;
+        }
+        if (subcommand === 'commit') {
+          print(
+            commitWorkspace(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              message: one(args, 'message'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'push') {
+          print(
+            pushWorkspace(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              remote: one(args, 'remote'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
+        break;
+      }
+
       case 'escalation': {
         if (subcommand === 'list') {
           print(listEscalations(db, bool(args, 'pending') ? 'pending' : undefined));
@@ -326,9 +410,7 @@ function main(): void {
   }
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error: unknown) => {
   console.error(`错误：${(error as Error).message}`);
   process.exitCode = 1;
-}
+});

@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { branchNameFor, cleanupWorkspace, createWorkspace } from '../src/app/workspaces.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
-import { runGit, runGitOrThrow } from '../src/infra/git.ts';
-import { createTestDb, createTestGoal, setupApproved } from './helpers.ts';
+import { runGit } from '../src/infra/git.ts';
+import { createTestDb, createTestGoal, createTestRepo, setupApproved } from './helpers.ts';
 
 const tempRoots: string[] = [];
 
@@ -15,17 +14,9 @@ after(() => {
 });
 
 function createRepo(): { root: string; repoDir: string } {
-  const root = mkdtempSync(join(tmpdir(), 'manner-workspace-'));
-  tempRoots.push(root);
-  const repoDir = join(root, 'demo');
-  mkdirSync(repoDir);
-  runGitOrThrow(['init', '-b', 'main'], { cwd: repoDir });
-  runGitOrThrow(['config', 'user.email', 'test@example.com'], { cwd: repoDir });
-  runGitOrThrow(['config', 'user.name', 'Tester'], { cwd: repoDir });
-  writeFileSync(join(repoDir, 'README.md'), '# demo\n');
-  runGitOrThrow(['add', '.'], { cwd: repoDir });
-  runGitOrThrow(['commit', '-m', 'init'], { cwd: repoDir });
-  return { root, repoDir };
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  return repo;
 }
 
 test('分支命名落在 feature/sm-* 范围并包含工作项', () => {

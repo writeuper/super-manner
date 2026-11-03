@@ -6,6 +6,13 @@ import { getGoal, getPlan, insertPlan, listPlansForGoal, updatePlan } from '../i
 import { getGoalOrThrow, setGoalStatus } from './goals.ts';
 import { issueGrantsForPlan } from './grants.ts';
 
+/** 目标当前生效的计划：批准后的最新一版。 */
+export function getApprovedPlan(db: DatabaseSync, goalId: string): Plan | undefined {
+  return listPlansForGoal(db, goalId)
+    .filter((plan) => plan.status === 'approved')
+    .at(-1);
+}
+
 export interface SubmitPlanInput {
   workItems: WorkItem[];
   totalBudgetTokens: number;

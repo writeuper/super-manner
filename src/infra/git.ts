@@ -26,6 +26,18 @@ export function runGitOrThrow(args: string[], options: { cwd?: string } = {}): G
   return result;
 }
 
+/** 解析 `git status --porcelain` 的改动路径；重命名只取新路径。 */
+export function listChangedFiles(cwd: string): string[] {
+  return runGit(['status', '--porcelain'], { cwd }).stdout
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const path = line.slice(3).trim();
+      const arrow = path.indexOf(' -> ');
+      return arrow === -1 ? path : path.slice(arrow + 4).trim();
+    });
+}
+
 export function isGitRepository(dir: string): boolean {
   const result = runGit(['rev-parse', '--is-inside-work-tree'], { cwd: dir });
   return result.status === 0 && result.stdout.trim() === 'true';

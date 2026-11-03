@@ -1,9 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { isActionAllowedForRole } from '../domain/actions.ts';
-import type { Action, GrantScope, Plan, WorkItem } from '../domain/types.ts';
+import type { Action, GrantScope, WorkItem } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
-import { listGrantsForGoal, listPlansForGoal } from '../infra/store.ts';
+import { listGrantsForGoal } from '../infra/store.ts';
 import { getGoalOrThrow } from './goals.ts';
+import { getApprovedPlan } from './plans.ts';
 
 /** P0 只有三种执行角色的工作项；架构师负责目标与批准，不进入执行。 */
 export type AgentRole = WorkItem['role'];
@@ -80,11 +81,9 @@ export interface InstantiateRoleInput {
   actor?: string;
 }
 
-function approvedPlan(db: DatabaseSync, goalId: string): Plan | undefined {
-  return listPlansForGoal(db, goalId)
-    .filter((plan) => plan.status === 'approved')
-    .at(-1);
-}
+
+
+
 
 /**
  * 按工作项契约装载角色实例。
@@ -106,7 +105,7 @@ export function instantiateRole(
     throw new Error(`目标当前状态不能实例化角色：${goal.status}`);
   }
 
-  const plan = approvedPlan(db, goal.id);
+  const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能实例化角色');
 
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);

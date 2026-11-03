@@ -13,6 +13,8 @@ export interface ExecutorRequest {
   cwd?: string;
   /** 追加/覆盖当前进程的环境变量；不传则继承。 */
   env?: Record<string, string | undefined>;
+  /** 写入子进程标准输入，便于传递长提示词，避免命令行长度限制。 */
+  stdin?: string;
   timeoutMs?: number;
 }
 

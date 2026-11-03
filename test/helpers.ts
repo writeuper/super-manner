@@ -1,8 +1,12 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { approvePlan, submitPlan, type SubmitPlanInput } from '../src/app/plans.ts';
 import { createGoal } from '../src/app/goals.ts';
 import type { CreateGoalInput, Goal, Plan, WorkItem } from '../src/domain/types.ts';
 import { openDatabase } from '../src/infra/db.ts';
+import { runGitOrThrow } from '../src/infra/git.ts';
 import { getGoal } from '../src/infra/store.ts';
 
 export const REPO = 'acme/demo';
@@ -25,6 +29,35 @@ export function defaultGoal(overrides: Partial<CreateGoalInput> = {}): CreateGoa
 
 export function createTestDb(): DatabaseSync {
   return openDatabase(':memory:');
+}
+
+export interface TestRepo {
+  root: string;
+  repoDir: string;
+  /** 仅 bareRemote 为 true 时有值，作为 origin 的 bare 远端。 */
+  remoteDir: string;
+}
+
+/** 建一个最小 git 仓库，供 worktree、提交与推送测试复用。 */
+export function createTestRepo(options: { bareRemote?: boolean } = {}): TestRepo {
+  const root = mkdtempSync(join(tmpdir(), 'manner-repo-'));
+  const repoDir = join(root, 'demo');
+  mkdirSync(join(repoDir, 'src'), { recursive: true });
+  runGitOrThrow(['init', '-b', 'main'], { cwd: repoDir });
+  runGitOrThrow(['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+  runGitOrThrow(['config', 'user.name', 'Tester'], { cwd: repoDir });
+  writeFileSync(join(repoDir, 'README.md'), '# demo\n');
+  writeFileSync(join(repoDir, 'src', 'app.ts'), 'export const ok = true;\n');
+  runGitOrThrow(['add', '.'], { cwd: repoDir });
+  runGitOrThrow(['commit', '-m', 'init'], { cwd: repoDir });
+
+  let remoteDir = '';
+  if (options.bareRemote) {
+    remoteDir = join(root, 'remote.git');
+    runGitOrThrow(['init', '--bare', '-b', 'main', remoteDir]);
+    runGitOrThrow(['remote', 'add', 'origin', remoteDir], { cwd: repoDir });
+  }
+  return { root, repoDir, remoteDir };
 }
 
 export function createTestGoal(db: DatabaseSync, overrides: Partial<CreateGoalInput> = {}): Goal {
