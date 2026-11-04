@@ -1,66 +1,20 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { isActionAllowedForRole } from '../domain/actions.ts';
-import type { Action, GrantScope, WorkItem } from '../domain/types.ts';
+import type { AgentRole, PlaybookContent } from '../domain/playbook.ts';
+import type { Action, GrantScope } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
 import { listGrantsForGoal } from '../infra/store.ts';
 import { getGoalOrThrow } from './goals.ts';
+import { ROLE_PLAYBOOKS } from './playbook-defaults.ts';
+import { resolvePlaybook } from './playbooks.ts';
 import { getApprovedPlan } from './plans.ts';
 
 /** P0 只有三种执行角色的工作项；架构师负责目标与批准，不进入执行。 */
-export type AgentRole = WorkItem['role'];
+export type { AgentRole };
 
-export interface RolePlaybook {
-  role: AgentRole;
-  name: string;
-  objective: string;
-  steps: string[];
-  boundaries: string[];
-}
+export type RolePlaybook = PlaybookContent;
 
-/**
- * 角色契约（playbook）。
- *
- * 描述角色做什么、按什么顺序做、不能做什么。
- * 动作权限不写在这里，一律以 Grant 为准，避免两处真相。
- */
-export const ROLE_PLAYBOOKS: Record<AgentRole, RolePlaybook> = {
-  planner: {
-    role: 'planner',
-    name: '规划者',
-    objective: '把目标拆成可独立执行与验证的工作项，并给出预算、风险与待决事项。',
-    steps: [
-      '阅读目标、验收标准、约束与自治级别',
-      '按验收标准拆解工作项，标注角色、依赖与完成标准',
-      '为每个工作项申请最小必要授权，预算合计不超过目标预算',
-      '列出风险与待决事项，提交计划等待人工批准',
-    ],
-    boundaries: ['不直接写代码', '不申请超出角色能力上限的动作', '未批准的计划不产生任何授权'],
-  },
-  builder: {
-    role: 'builder',
-    name: '实现者',
-    objective: '在授权范围内完成一个工作项的代码改动并自检。',
-    steps: [
-      '读取目标、计划与工作项授权',
-      '在独立 worktree 内先读后写，写操作前经工具网关',
-      '运行类型检查与相关测试，记录失败原因',
-      '把改动提交到自有分支，登记产物供验证使用',
-    ],
-    boundaries: ['不读取密钥', '不合并 PR', '不越出授权的仓库、分支与路径', '不修改授权外的文件'],
-  },
-  verifier: {
-    role: 'verifier',
-    name: '验证者',
-    objective: '独立判断工作项是否满足验收标准，不采信实现者的自评。',
-    steps: [
-      '只读取目标、改动差异、验收标准与已有证据',
-      '逐条核对验收标准，必要时运行命令复现',
-      '记录命令、输出摘要、环境、时间与哈希',
-      '给出通过 / 不通过 / 无法判定，并说明理由',
-    ],
-    boundaries: ['不复用实现者会话', '不修改实现', '不自行降低验收标准'],
-  },
-};
+export { ROLE_PLAYBOOKS };
 
 export interface RoleInstance {
   id: string;
@@ -73,6 +27,9 @@ export interface RoleInstance {
   scope: GrantScope;
   maxTokens?: number;
   playbook: RolePlaybook;
+  playbookVersionId?: string;
+  playbookVersion?: number;
+  playbookChannel: 'builtin' | 'stable' | 'canary';
 }
 
 export interface InstantiateRoleInput {
@@ -128,7 +85,7 @@ export function instantiateRole(
     throw new Error(`工作项 ${item.id} 的授权范围不包含目标仓库 ${goal.repo}`);
   }
 
-  const playbook = ROLE_PLAYBOOKS[item.role];
+  const resolved = resolvePlaybook(db, item.role, item.id);
   const instance: RoleInstance = {
     id: `role:${goal.id.slice(0, 8)}-${item.id}`,
     goalId: goal.id,
@@ -139,7 +96,11 @@ export function instantiateRole(
     actions: grant.actions,
     scope: grant.scope,
     maxTokens: grant.constraints.maxTokens,
-    playbook,
+    playbook: resolved.content,
+    ...(resolved.version === undefined
+      ? {}
+      : { playbookVersionId: resolved.version.id, playbookVersion: resolved.version.version }),
+    playbookChannel: resolved.channel,
   };
 
   appendAudit(
@@ -154,6 +115,8 @@ export function instantiateRole(
         workItemId: item.id,
         grantId: grant.id,
         actions: grant.actions,
+        playbookVersionId: instance.playbookVersionId ?? null,
+        playbookChannel: instance.playbookChannel,
       },
     },
     now.toISOString(),

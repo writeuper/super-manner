@@ -9,6 +9,7 @@ import type { Action } from '../src/domain/actions.ts';
 import type { Workspace } from '../src/domain/types.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { listAuditEvents } from '../src/infra/audit.ts';
+import { listEscalations } from '../src/infra/store.ts';
 import { runGit, runGitOrThrow } from '../src/infra/git.ts';
 import {
   BUILDER,
@@ -124,6 +125,27 @@ test('改动超出授权路径时拒绝提交', () => {
     /改动超出授权路径：README\.md/,
   );
   assert.equal(headOf(workspace), before);
+  assert.equal(
+    listAuditEvents(db, goalId).filter((event) => event.type === 'change.scope_violation').length,
+    1,
+  );
+  assert.equal(listEscalations(db, 'pending').length, 1);
+});
+
+test('绕过提交命令手工提交的越界改动也不能推送', () => {
+  const { db, goalId, repo, workspace } = setupWorkspace({ bareRemote: true });
+  writeFileSync(join(workspace.path, 'README.md'), '# 手工越界\n');
+  runGitOrThrow(['add', '-A'], { cwd: workspace.path });
+  runGitOrThrow(['commit', '-m', 'bypass'], { cwd: workspace.path });
+
+  assert.throws(
+    () => pushWorkspace(db, { goalId, workItemId: 'build' }),
+    /改动超出授权路径：README\.md/,
+  );
+  assert.notEqual(
+    runGit(['--git-dir', repo.remoteDir, 'rev-parse', '--verify', `refs/heads/${workspace.branch}`]).status,
+    0,
+  );
 });
 
 test('未获 repo.commit 授权时不写入 git 状态', () => {

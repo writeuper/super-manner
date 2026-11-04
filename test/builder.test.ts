@@ -9,6 +9,7 @@ import { resetBuilderRetry, classifyRunFailure } from '../src/app/retries.ts';
 import type { Executor, ExecutorRequest, ExecutorResult, ExecutorStatus } from '../src/domain/executor.ts';
 import type { WorkItem } from '../src/domain/types.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
+import { listCheckpointsForGoal, listEscalations } from '../src/infra/store.ts';
 import {
   BUILDER,
   REPO,
@@ -342,6 +343,46 @@ test('不同失败原因不会累积', async () => {
   assert.equal(third.status, 'failed');
   assert.notEqual(third.status, 'blocked');
   assert.equal(executor.calls.filter((call) => call.command === 'fake-agent').length, 3);
+});
+
+test('改动超出授权路径时阻断运行并生成升级卡片', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+  const executor = new FakeExecutor((request) => {
+    if (request.command === 'fake-agent') {
+      writeFileSync(join(request.cwd as string, 'README.md'), '# 越界改动\n');
+      return { stdout: '改完了' };
+    }
+    return {};
+  });
+
+  const result = await runBuilder(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor,
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+    selfChecks: [],
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(result.changedFiles, ['README.md']);
+  assert.deepEqual(result.scopeViolation?.files, ['README.md']);
+  assert.equal(result.scopeViolation?.outcome, 'escalated');
+  assert.ok(result.scopeViolation?.escalationId);
+  assert.match(result.reason, /改动超出授权范围：README\.md/);
+  assert.equal(result.failureKind, 'implementation');
+  assert.equal(
+    listAuditEvents(db, goal.id).filter((event) => event.type === 'change.scope_violation').length,
+    1,
+  );
+  assert.equal(listEscalations(db, 'pending').length, 1);
+  assert.equal(
+    listCheckpointsForGoal(db, goal.id).filter((checkpoint) => checkpoint.kind === 'builder_run').length,
+    0,
+  );
 });
 
 test('网络类退出归为环境失败', () => {

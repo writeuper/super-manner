@@ -20,7 +20,6 @@ S2 把执行者从"测试里的脚本"换成"可以被隔离、被约束、被�
 **非目标（留给后续任务）**
 
 - 四类失败分类与恢复策略（S4-04；P0 只区分实现与环境）。
-- PR 创建自动化与 PR 关联工作项（P0 人工创建 PR）。
 - 独立验证上下文与证据采集（S3）。
 - 按 token 的预算计量与耗尽暂停（S4-03）。
 
@@ -212,18 +211,29 @@ interface RoleInstance {
 
 1. 重新装载角色并取活跃工作区；
 2. 无改动直接返回 `no_changes`；
-3. 校验所有改动路径都在 Grant 的 `paths` 内，越界即拒绝（不写任何 git 状态）；
+3. 用 `enforceChangeScope` 按有效 Grant 校验所有改动路径，越界即拒绝、写 `change.scope_violation` 审计并生成升级卡片（不写任何 git 状态）；
 4. 请求网关 `repo.commit`（仓库 + 分支 + 授权路径）；
 5. 放行后 `git add -A`、`git commit -m`，取 `HEAD` sha；
 6. 记 `builder.committed`；拒绝则记 `builder.commit_denied`。
 
-默认提交信息为 `manner: <工作项标题> (<id>)`，可用 `--message` 覆盖。
+默认提交信息为 `manner: <工作项标题> (<id>)`，可用 `--message` 覆盖。Builder 运行结束后也会执行同一校验，越界时直接返回 `blocked` 且不写 checkpoint。
 
 ### 7.2 推送
 
-`pushWorkspace` 请求网关 `repo.push`，放行后执行 `git push -u <remote> <branch>`，返回 `pushed` / `failed` / `denied`，并记录 `builder.pushed` 或 `builder.push_denied`。
+`pushWorkspace` 先用 `git diff --name-only <base>...HEAD` 取已提交文件并再次校验授权范围，再请求网关 `repo.push`；放行后执行 `git push -u <remote> <branch>`，返回 `pushed` / `failed` / `denied`，并记录 `builder.pushed` 或 `builder.push_denied`。这样即使有人绕过 `builder commit` 手工提交，越界改动也无法推送。
 
-P0 只保证分支可达；PR 由人工创建并关联工作项，自动化 PR 留给后续任务。
+### 7.3 创建 PR
+
+`createPullRequest` 按以下顺序执行：
+
+1. 校验目标、已批准计划、工作项与活跃工作区，装载角色（允许 `executing` / `verifying`）；
+2. 查询 `pr.created` 审计，已创建则直接返回 `existing`（幂等，不重复调用 gh）；
+3. 请求网关 `pr.create`，拒绝返回 `denied`；
+4. 用 `git ls-remote --heads <remote> <branch>` 确认分支已推送，否则返回 `blocked`；
+5. 执行 `gh pr create --repo <repo> --base <base> --head <branch> --title ... --body ...`；
+6. 从 stdout 提取 PR URL，写 `pr.created`；失败则保留退出码与 stderr，写 `pr.create_failed`。
+
+默认 PR 描述包含目标、工作项、验收标准与分支说明；可用 `--title` / `--body` 覆盖。
 
 ## 8. 失败重试（S2-06）
 
@@ -272,9 +282,10 @@ manner role instantiate --goal <goalId> --item build --by system
 # 运行 Builder：缺工作区时自动创建，Agent 默认 codex
 manner builder run --goal <goalId> --item build --repo-dir ~/src/demo --by builder-1
 
-# 提交与推送（PR 由人工创建）
+# 提交、推送与创建 PR
 manner builder commit --goal <goalId> --item build --message "feat: ..." --by builder-1
 manner builder push --goal <goalId> --item build --by builder-1
+manner builder pr --goal <goalId> --item build [--title ...] [--base main] --by builder-1
 
 # 人工接手后重置重试计数（历史保留）
 manner builder reset --goal <goalId> --item build --reason "已调整方案" --by human
@@ -302,9 +313,11 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 | S2-04 失败不混入自检 | `builder.test.ts` · Agent 失败时不运行自检并返回失败原因 / 自检失败时整体判定为失败 |
 | S2-04 自检命令探测 | `builder.test.ts` · 自检命令按 package.json 与锁文件探测 |
 | S2-04 空改动判失败 | `builder.test.ts` · Agent 成功但没有改动时视为失败 |
-| S2-05 提交与范围校验 | `delivery.test.ts` · 提交授权范围内的改动并写入审计 / 没有改动时返回 no_changes / 改动超出授权路径时拒绝提交 |
+| S2-05 提交与范围校验 | `delivery.test.ts` · 提交授权范围内的改动并写入审计 / 没有改动时返回 no_changes / 改动超出授权路径时拒绝提交并生成升级卡片 |
 | S2-05 未授权提交被拒绝 | `delivery.test.ts` · 未获 repo.commit 授权时不写入 git 状态 |
-| S2-05 推送与失败证据 | `delivery.test.ts` · 推送自有分支到远端 / 未获 repo.push 授权时不推送 / 远端不可达时推送标记为失败 |
+| S2-05 推送与失败证据 | `delivery.test.ts` · 推送自有分支到远端 / 未获 repo.push 授权时不推送 / 远端不可达时推送标记为失败 / 手工提交的越界改动不能推送 |
+| S2-05 Builder 运行期拦越界 | `builder.test.ts` · 改动超出授权路径时阻断运行并生成升级卡片 |
+| S2-05 PR 自动创建 | `pull-requests.test.ts` · 用 gh 创建 PR 并记录审计 / 重复创建返回已有 PR / 未授权拒绝 / 分支未推送阻断 / gh 失败保留输出 |
 | S2-06 同因两次转人 | `builder.test.ts` · 同一原因连续失败两次后转人工 |
 | S2-06 环境失败不计入 | `builder.test.ts` · 环境失败不计入同因次数 |
 | S2-06 网络类失败归为环境 | `builder.test.ts` · 网络类退出归为环境失败 |
@@ -315,13 +328,13 @@ manner builder reset --goal <goalId> --item build --reason "已调整方案" --b
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
-| 文件级写拦截 | 整次 run 以 `repo.write` 放行，靠 commit 前路径校验兜底 | 需要更细粒度时在网关前加文件钩子 |
-| PR 创建 | 只推送分支，PR 由人工创建并关联工作项 | 后续接入 GitHub API |
+| 文件级写拦截 | 整次 run 以 `repo.write` 放行，运行后、提交前、推送前三处按有效 Grant 校验改动路径，越界阻断并升级 | 需要事前拦截时在网关前加文件钩子 |
+| PR 创建 | 经 `pr.create` 授权后调用 gh CLI 自动创建，幂等并以审计为准 | 依赖本地 gh 已登录且有仓库权限 |
 | 失败分类 | 只区分实现与环境；非零退出默认视为实现失败，网络类靠 stderr 关键词启发式归为环境 | S4-04 |
 | 转人后的恢复 | 需人工执行 `builder reset`，未自动创建升级单 | S4-04 |
 | 预算计量 | 只把 `maxTokens` 带入角色实例，未累计真实消耗 | S4-03 |
 | 多进程并发 | 同一工作项由数据库唯一索引兜底，未做跨进程租约 | 视需要 |
 | worktree 回收 | 依赖显式 cleanup，未做目标取消时的自动回收 | S4-02 |
-| 推送后验证 | 未自动确认远端分支与 PR 状态 | S3 / S2-07 |
+| 推送后验证 | PR 创建前用 `git ls-remote` 确认分支可达，但未回查 PR 后续状态 | S3 / S2-07 |
 | Agent 自带沙箱 | codex 的 `workspace-write` 依赖 bubblewrap；在缺少 `CAP_NET_ADMIN` 的容器里 bwrap 无法建回环，端到端改用 `danger-full-access`，隔离由 worktree 与网关承担 | 宿主具备 bwrap 时恢复 `workspace-write` |
 | 空改动 | Agent 退出码 0 但没有任何文件改动时判为失败（`agent:no_changes`），避免"看起来成功" | 分析类工作项需要单独类型 |

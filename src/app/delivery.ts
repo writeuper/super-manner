@@ -7,6 +7,7 @@ import { tailText } from '../infra/text.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { recordCheckpoint } from './checkpoints.ts';
 import { requestAction } from './gateway.ts';
+import { enforceChangeScope } from './change-scope.ts';
 import { getApprovedPlan } from './plans.ts';
 import { instantiateRole } from './roles.ts';
 
@@ -59,6 +60,7 @@ interface DeliveryContext {
   workspaceId: string;
   workspacePath: string;
   branch: string;
+  baseBranch: string;
 }
 
 function requireContext(db: DatabaseSync, input: DeliveryInput): DeliveryContext {
@@ -75,22 +77,48 @@ function requireContext(db: DatabaseSync, input: DeliveryInput): DeliveryContext
     workspaceId: workspace.id,
     workspacePath: workspace.path,
     branch: workspace.branch,
+    baseBranch: workspace.baseBranch,
   };
 }
 
-/** 提交前校验所有改动都在授权路径内，避免 Agent 顺手改了范围外的文件。 */
-function assertWithinScope(item: WorkItem, files: string[]): void {
-  const paths = item.grant.scope.paths;
-  if (!paths || paths.length === 0) return;
-  const outside = files.filter(
-    (file) =>
-      !paths.some((prefix) =>
-        file === prefix ? true : file.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`),
-      ),
+/** 提交前校验所有改动都在有效授权路径内，避免 Agent 顺手改了范围外的文件。 */
+function assertWithinScope(
+  db: DatabaseSync,
+  context: DeliveryContext,
+  subject: string,
+  files: string[],
+  actor: string | undefined,
+  now: Date,
+): void {
+  const violation = enforceChangeScope(
+    db,
+    {
+      goalId: context.goal.id,
+      subject,
+      repo: context.goal.repo,
+      branch: context.branch,
+      files,
+      actor,
+    },
+    now,
   );
-  if (outside.length > 0) {
-    throw new Error(`改动超出授权路径：${outside.join(', ')}`);
+  if (violation) {
+    throw new Error(`改动超出授权路径：${violation.files.join(', ')}`);
   }
+}
+
+/** 推送前按目标分支的实际提交差异再校验一次，防止绕过 commit 命令手工提交。 */
+function committedFiles(context: DeliveryContext): string[] {
+  const result = runGit(['diff', '--name-only', `${context.baseBranch}...HEAD`], {
+    cwd: context.workspacePath,
+  });
+  if (result.status !== 0) {
+    throw new Error(`无法计算相对 ${context.baseBranch} 的改动：${(result.stderr || result.stdout).trim()}`);
+  }
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 /** 把工作区改动提交到自有分支；未获 repo.commit 授权时不写任何 git 状态。 */
@@ -117,7 +145,7 @@ export function commitWorkspace(
       files,
     };
   }
-  assertWithinScope(context.item, files);
+  assertWithinScope(db, context, role.subject, files, input.actor, now);
 
   const resource: ResourceRef = { repo: context.goal.repo, branch: context.branch };
   const pathScope = role.scope.paths?.[0];
@@ -211,6 +239,9 @@ export function pushWorkspace(
     actor: input.actor,
   });
   const remote = input.remote ?? 'origin';
+
+  // 手工提交可能绕过 commitWorkspace，推送前按实际提交差异再校验一次。
+  assertWithinScope(db, context, role.subject, committedFiles(context), input.actor, now);
 
   const gate = requestAction(
     db,

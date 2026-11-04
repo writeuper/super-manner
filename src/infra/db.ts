@@ -185,5 +185,63 @@ function migrate(db: DatabaseSync): void {
     `);
 
     db.exec('PRAGMA user_version = 4;');
+    version = 4;
+  }
+
+  if (version < 5) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS playbook_golden_tasks (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        title TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        criteria TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_golden_tasks_role
+        ON playbook_golden_tasks(role);
+
+      CREATE TABLE IF NOT EXISTS playbook_proposals (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        base_version_id TEXT,
+        base_version INTEGER,
+        content TEXT NOT NULL,
+        rationale TEXT NOT NULL,
+        source_goal_id TEXT,
+        created_by TEXT NOT NULL,
+        status TEXT NOT NULL,
+        evaluation TEXT,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        decision_reason TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_playbook_proposals_role
+        ON playbook_proposals(role, created_at);
+
+      CREATE TABLE IF NOT EXISTS playbook_versions (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL,
+        canary_percent INTEGER NOT NULL,
+        source_proposal_id TEXT,
+        metrics TEXT,
+        created_at TEXT NOT NULL,
+        activated_at TEXT,
+        retired_at TEXT
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_playbook_versions_role_version
+        ON playbook_versions(role, version);
+      CREATE INDEX IF NOT EXISTS idx_playbook_versions_role_status
+        ON playbook_versions(role, status);
+    `);
+
+    db.exec('PRAGMA user_version = 5;');
   }
 }

@@ -10,6 +10,7 @@ import { instantiateRole } from './app/roles.ts';
 import { cleanupWorkspace, createWorkspace } from './app/workspaces.ts';
 import { runBuilder, type BuilderRunResult } from './app/builder.ts';
 import { commitWorkspace, pushWorkspace } from './app/delivery.ts';
+import { createPullRequest } from './app/pull-requests.ts';
 import { resetBuilderRetry } from './app/retries.ts';
 import { buildVerifierContext } from './app/verification.ts';
 import { collectEvidence } from './app/evidence.ts';
@@ -20,12 +21,23 @@ import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
 import { buildReview, generateReview } from './app/review.ts';
+import {
+  activateVersion,
+  importGoldenTasks,
+  promoteProposal,
+  proposePlaybook,
+  recordEvaluation,
+  rejectProposal,
+  rollbackPlaybook,
+} from './app/playbooks.ts';
 import { listInbox, queryTimeline } from './app/audit-query.ts';
 import { isAction } from './domain/actions.ts';
+import type { AgentRole, EvaluationResult, GoldenTask, PlaybookContent } from './domain/playbook.ts';
 import type { AutonomyLevel, ResourceRef } from './domain/types.ts';
 import { listAuditEvents, verifyAuditChain } from './infra/audit.ts';
 import { openDatabase } from './infra/db.ts';
 import { createLocalExecutor } from './infra/executor.ts';
+import { listGoldenTasks, listProposals, listVersions } from './infra/playbook-store.ts';
 import { tailText } from './infra/text.ts';
 import {
   getGoal,
@@ -171,6 +183,8 @@ const USAGE = `Super-Manner CLI
                      （参数本身以 -- 开头时写成 --agent-arg=--sandbox）
   manner builder commit --goal <id> --item <workItemId> [--message <text>] [--by <id>]
   manner builder push --goal <id> --item <workItemId> [--remote origin] [--by <id>]
+  manner builder pr --goal <id> --item <workItemId> [--title <text>] [--body <text>]
+                     [--base <branch>] [--remote origin] [--by <id>]
   manner builder reset --goal <id> --item <workItemId> [--reason <text>] [--by <id>]
   manner verify context --goal <id> --item <workItemId> [--by <id>]
   manner verify evidence --goal <id> --item <workItemId> [--by <id>]
@@ -184,6 +198,18 @@ const USAGE = `Super-Manner CLI
   manner auth request --goal <id> --subject <id> --action <action> [--repo r] [--branch b] [--path p] [--key k] [--host h]
   manner audit log [--goal <id>]
   manner audit verify
+  manner playbook golden import --file golden.json --by <id>
+  manner playbook golden list [--role <role>]
+  manner playbook propose --role <role> --file playbook.json --by <id>
+                          [--rationale <text>] [--goal <id>]
+  manner playbook list [--role <role>]
+  manner playbook evaluate <proposalId> --file results.json --by <id>
+                          [--min-pass-rate 0.8] [--min-tasks 3]
+  manner playbook promote <proposalId> --by <id> [--canary 10]
+  manner playbook activate <versionId> --by <id>
+  manner playbook versions [--role <role>]
+  manner playbook rollback --role <role> --by <id> [--reason <text>]
+  manner playbook reject <proposalId> --by <id> --reason <text>
 `;
 
 async function main(): Promise<void> {
@@ -380,6 +406,21 @@ async function main(): Promise<void> {
           );
           return;
         }
+        if (subcommand === 'pr') {
+          print(
+            await createPullRequest(db, {
+              goalId: required(args, 'goal'),
+              workItemId: required(args, 'item'),
+              executor: createLocalExecutor(),
+              title: one(args, 'title'),
+              body: one(args, 'body'),
+              base: one(args, 'base'),
+              remote: one(args, 'remote'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
         if (subcommand === 'reset') {
           print(
             resetBuilderRetry(db, {
@@ -555,6 +596,105 @@ async function main(): Promise<void> {
         }
         if (subcommand === 'extend') {
           print(extendBudget(db, goalId, Number(required(args, 'tokens')), required(args, 'by')));
+          return;
+        }
+        break;
+      }
+
+      case 'playbook': {
+        if (subcommand === 'golden') {
+          if (third === 'import') {
+            const tasks = JSON.parse(readFileSync(required(args, 'file'), 'utf8')) as Array<
+              Omit<GoldenTask, 'createdAt'>
+            >;
+            print(
+              importGoldenTasks(db, {
+                tasks: tasks.map((task) => ({ ...task, createdAt: '' })),
+                actor: required(args, 'by'),
+              }),
+            );
+            return;
+          }
+          if (third === 'list') {
+            print(listGoldenTasks(db, one(args, 'role') as AgentRole | undefined));
+            return;
+          }
+          throw new Error('用法：playbook golden import|list');
+        }
+        if (subcommand === 'propose') {
+          const role = required(args, 'role') as AgentRole;
+          const content = JSON.parse(readFileSync(required(args, 'file'), 'utf8')) as PlaybookContent;
+          print(
+            proposePlaybook(db, {
+              role,
+              content,
+              rationale: required(args, 'rationale'),
+              actor: required(args, 'by'),
+              sourceGoalId: one(args, 'goal'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'list') {
+          print(listProposals(db, one(args, 'role') as AgentRole | undefined));
+          return;
+        }
+        if (subcommand === 'evaluate') {
+          if (!third) throw new Error('用法：playbook evaluate <proposalId> --file results.json');
+          const results = JSON.parse(readFileSync(required(args, 'file'), 'utf8')) as EvaluationResult[];
+          const minPassRate = one(args, 'min-pass-rate');
+          const minTasks = one(args, 'min-tasks');
+          print(
+            recordEvaluation(db, {
+              proposalId: third,
+              results,
+              actor: required(args, 'by'),
+              ...(minPassRate === undefined ? {} : { minPassRate: Number(minPassRate) }),
+              ...(minTasks === undefined ? {} : { minTasks: Number(minTasks) }),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'promote') {
+          if (!third) throw new Error('用法：playbook promote <proposalId> --by <id> [--canary 10]');
+          const canary = one(args, 'canary');
+          print(
+            promoteProposal(db, {
+              proposalId: third,
+              actor: required(args, 'by'),
+              ...(canary === undefined ? {} : { canaryPercent: Number(canary) }),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'activate') {
+          if (!third) throw new Error('用法：playbook activate <versionId> --by <id>');
+          print(activateVersion(db, { versionId: third, actor: required(args, 'by') }));
+          return;
+        }
+        if (subcommand === 'versions') {
+          print(listVersions(db, one(args, 'role') as AgentRole | undefined));
+          return;
+        }
+        if (subcommand === 'rollback') {
+          print(
+            rollbackPlaybook(db, {
+              role: required(args, 'role') as AgentRole,
+              actor: required(args, 'by'),
+              reason: one(args, 'reason'),
+            }),
+          );
+          return;
+        }
+        if (subcommand === 'reject') {
+          if (!third) throw new Error('用法：playbook reject <proposalId> --by <id> --reason <text>');
+          print(
+            rejectProposal(db, {
+              proposalId: third,
+              actor: required(args, 'by'),
+              reason: required(args, 'reason'),
+            }),
+          );
           return;
         }
         break;

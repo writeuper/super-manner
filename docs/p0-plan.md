@@ -1,7 +1,7 @@
 # P0 实现任务拆解
 
 > 依据：[PRD v0.2](prd-v0.2.html) · 范围：一次目标、一个仓库、到 PR 为止
-> 状态：S1、S2、S3、S4 全部完成，P0 验收演练通过（2026-11-03）
+> 状态：S1、S2、S3、S4 全部完成，P0 验收演练通过（2026-11-03）；P0 之后已补充交付闭环与 FR-11 受控自我迭代
 
 ## 1. 范围
 
@@ -20,7 +20,7 @@ P0 覆盖 10 条功能需求：
 | FR-10 | 暂停、取消与失败恢复 | S4 |
 | FR-12 | 审计、追溯与待我处理 | S1 建底座，S2–S4 补全 |
 
-P1 项不在本轮实现：FR-07 房间与唤醒、FR-11 自我迭代（P0 只生成复盘记录，不产生变更提案）。P0 内用工作项状态与报告替代房间协调。
+P1 项中 FR-07 房间与唤醒仍未实现（P0 内用工作项状态与报告替代房间协调）；FR-11 自我迭代已作为 P0 后的延伸落地，见第 11 节。
 
 ## 2. 工程前提（默认值，确认后开工）
 
@@ -89,11 +89,11 @@ P1 项不在本轮实现：FR-07 房间与唤醒、FR-11 自我迭代（P0 只�
 | S2-02 ✅ | 执行器适配 | Executor 接口与一个本地 CLI 实现 | 可替换实现；超时与退出码可判定 | S1-01 |
 | S2-03 ✅ | 角色实例化 | 按契约装载 Planner / Builder / Verifier | 角色能力与其 Grant 一致 | S1-06 |
 | S2-04 ✅ | Builder 运行 | 读目标、计划、授权 → 实现 → 自检 | 所有写操作经网关；产物落自有分支 | S2-01～S2-03 |
-| S2-05 ✅ | 提交与推送 | commit / push 与产物登记（PR 人工创建） | 分支可推送；越界改动有证据 | S2-04 |
+| S2-05 ✅ | 提交与推送 | commit / push 与产物登记（PR 由 `manner builder pr` 自动创建） | 分支可推送；越界改动有证据 | S2-04 |
 | S2-06 ✅ | 失败重试 | 失败分类、同因两次转人、人工重置 | 失败原因可区分；重置不改写历史 | S2-04 |
 | S2-07 ✅ | 端到端 | 真实仓库完成一个小改动并开 PR | 人可只读 PR 理解改了什么 | S2-05 |
 
-端到端记录：真实 codex（token-plan + deepseek-v4.1-flash）在 `feature/sm-179ad8f6-build` 上为 README 增加 Builder 快速开始，自检通过后由 `builder commit` 提交为 `7ae7174`，`builder push` 推送分支；PR 按约定由人工创建（`https://github.com/writeuper/super-manner/compare/main...feature/sm-179ad8f6-build?expand=1`）。
+端到端记录：真实 codex（token-plan + deepseek-v4.1-flash）在 `feature/sm-179ad8f6-build` 上为 README 增加 Builder 快速开始，自检通过后由 `builder commit` 提交为 `7ae7174`，`builder push` 推送分支；PR 按约定由人工创建（`https://github.com/writeuper/super-manner/compare/main...feature/sm-179ad8f6-build?expand=1`）。当前已提供 `manner builder pr`，经 `pr.create` 授权后调用 gh CLI 自动创建 PR。
 
 ## 6. S3：验证与验收
 
@@ -119,7 +119,7 @@ P1 项不在本轮实现：FR-07 房间与唤醒、FR-11 自我迭代（P0 只�
 | S4-02 ✅ | 取消与吊销 | 目标 → 授权 → 运行的级联停止 | 取消后无残留动作 | S1-06 |
 | S4-03 ✅ | 预算计量 | 按 token 计量、耗尽暂停并升级 | 金额仅展示；不得自行压缩验证 | S2-04 |
 | S4-04 ✅ | 失败分类 | 实现 / 验证 / 环境 / 外部四类与恢复策略 | 环境失败不计入实现者次数 | S2-06 |
-| S4-05 ✅ | 复盘记录 | 只读汇总：偏差、介入、拒绝、升级、失败 | 不含自动改进提案（P1） | S3-06 |
+| S4-05 ✅ | 复盘记录 | 只读汇总：偏差、介入、拒绝、升级、失败 | 只读；改进提案由 FR-11 独立流程承载 | S3-06 |
 | S4-06 ✅ | 审计查询与待办 | 时间线与"待我处理"队列 | 可按目标、人、动作过滤 | S1-04 |
 | S4-07 ✅ | P0 验收演练 | 用真实目标跑完整旅程 | 第 4、5、6、7 节场景全过 | 全部 |
 
@@ -160,3 +160,30 @@ S3-06 → S4-05 → S4-06 → S4-07
 - 全程没有一次未授权动作被执行。
 - 任一目标可由他人仅凭审计还原。
 - 目标结束后授权全部失效，复盘记录已生成。
+
+## 11. P1 先行：FR-11 受控自我迭代（已实现）
+
+目标：让 Playbook 的变更像代码一样可评测、可灰度、可回滚，而不是直接改提示词。实现于 P0 之后，未改变 S1–S4 既有契约。
+
+状态机：`proposed → evaluated → promoted`（或 `rejected`）；版本状态为 `canary` / `active` / `retired`。
+
+| 能力 | 约束 | 审计事件 |
+| --- | --- | --- |
+| 黄金任务集导入 | 按角色归属，id 全局唯一，必填 title / prompt / criteria | `playbook.golden_tasks_imported` |
+| 变更提案 | 内容必须与当前生效版本不同；必须写明 rationale | `playbook.proposed` |
+| 评测 | 结果须覆盖该角色全部黄金任务、无未知或重复任务；默认 `minPassRate=0.8`、`minTasks=3`；相对当前 active 版本做逐任务回归检测 | `playbook.evaluated` |
+| 晋级 | 必须已评测、通过率达标、无回归；提案人不得自批；`--canary 1-99` 进入灰度，其余全量 | `playbook.promoted` |
+| 激活 / 回滚 | 激活会退休同角色其他 active/canary；回滚优先回到上一退役版本，无候选则回退内置 playbook | `playbook.activated` / `playbook.rolled_back` |
+| 装载 | 角色实例按 `canary 分桶 → active → builtin` 解析，并记录 `playbookVersionId` 与 `playbookChannel` | `role.instantiated` |
+
+输入文件格式：
+
+```jsonc
+// golden.json：黄金任务数组
+[{ "id": "gt-001", "role": "builder", "title": "…", "prompt": "…", "criteria": ["…"] }]
+
+// results.json：外部运行结果数组；tokens 可选
+[{ "taskId": "gt-001", "passed": true, "tokens": 1200 }]
+```
+
+灰度分桶按 `sha256(role:workItemId)` 稳定取模，同一工作项在灰度期间始终命中同一版本。评测执行本身仍在系统外完成（由人或其他运行器跑黄金任务后导入结果），系统负责门禁与版本治理；这是当前边界，也是后续接入自动评测的接口。

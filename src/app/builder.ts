@@ -10,6 +10,7 @@ import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { assessRepeatWrite, recordCheckpoint } from './checkpoints.ts';
+import { enforceChangeScope, type ChangeScopeViolation } from './change-scope.ts';
 import { recordTokenUsage } from './budget.ts';
 import { requestAction } from './gateway.ts';
 import { getApprovedPlan } from './plans.ts';
@@ -82,6 +83,8 @@ export interface BuilderRunResult {
   retry: RetryState;
   /** 本次运行的失败分类；成功或未运行时为空。 */
   failureKind?: FailureKind;
+  /** 改动超出授权范围时的详细信息；未越界为空。 */
+  scopeViolation?: ChangeScopeViolation;
 }
 
 /** 把目标、工作项与授权压成一段可执行提示词，避免 Agent 自行猜测边界。 */
@@ -364,22 +367,37 @@ export async function runBuilder(
 
   const changedFiles = listChangedFiles(workspace.path);
   const diffStat = runGit(['diff', '--stat'], { cwd: workspace.path }).stdout.trim();
+  const scopeViolation = enforceChangeScope(
+    db,
+    {
+      goalId: goal.id,
+      subject: role.subject,
+      repo: goal.repo,
+      branch: workspace.branch,
+      files: changedFiles,
+      actor: input.actor,
+    },
+    new Date(),
+  );
 
   const failedChecks = selfChecks.filter((check) => check.status !== 'succeeded');
   // Agent 退出码为 0 但一个文件都没改，通常意味着它没真正执行；不能算成功。
   const noChanges = changedFiles.length === 0;
-  const status: BuilderRunStatus =
-    agentResult.status === 'succeeded' && failedChecks.length === 0 && !noChanges
+  const status: BuilderRunStatus = scopeViolation
+    ? 'blocked'
+    : agentResult.status === 'succeeded' && failedChecks.length === 0 && !noChanges
       ? 'succeeded'
       : 'failed';
-  const failure =
-    classifyRunFailure(
-      agentResult.status,
-      failedChecks.map((check) => ({ name: check.name, status: check.status })),
-      agentResult.stderr,
-    ) ?? (status === 'failed' ? { failureKind: 'implementation' as const, causeKey: 'agent:no_changes' } : undefined);
-  const reason =
-    agentResult.status !== 'succeeded'
+  const failure = scopeViolation
+    ? { failureKind: 'implementation' as const, causeKey: 'scope:violation' }
+    : classifyRunFailure(
+        agentResult.status,
+        failedChecks.map((check) => ({ name: check.name, status: check.status })),
+        agentResult.stderr,
+      ) ?? (status === 'failed' ? { failureKind: 'implementation' as const, causeKey: 'agent:no_changes' } : undefined);
+  const reason = scopeViolation
+    ? `改动超出授权范围：${scopeViolation.files.join(', ')}（${scopeViolation.outcome === 'escalated' ? '已生成升级卡片等待裁决' : '已拒绝'}）`
+    : agentResult.status !== 'succeeded'
       ? `模型执行失败：${agentResult.status}（退出码 ${agentResult.exitCode ?? '无'}）`
       : failedChecks.length > 0
         ? `自检未通过：${failedChecks.map((check) => check.name).join(', ')}`
@@ -412,6 +430,7 @@ export async function runBuilder(
         })),
         changedFiles,
         diffStat,
+        ...(scopeViolation === undefined ? {} : { scopeViolation }),
         stdoutTail: tailText(agentResult.stdout),
         stderrTail: tailText(agentResult.stderr),
       },
@@ -464,5 +483,6 @@ export async function runBuilder(
     diffStat,
     retry,
     ...(failure ? { failureKind: failure.failureKind } : {}),
+    ...(scopeViolation ? { scopeViolation } : {}),
   };
 }
