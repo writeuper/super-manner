@@ -5,6 +5,7 @@ import { after, test } from 'node:test';
 import { getGoalCheckpoints } from '../src/app/checkpoints.ts';
 import { extendBudget, getBudgetStatus } from '../src/app/budget.ts';
 import { commitWorkspace, pushWorkspace } from '../src/app/delivery.ts';
+import { collectEvidence } from '../src/app/evidence.ts';
 import {
   cancelGoal,
   getGoalOrThrow,
@@ -180,6 +181,12 @@ test('出现不通过判定后，恢复不会跳过重试', async () => {
 
   commitWorkspace(db, { goalId: goal.id, workItemId: 'build' });
   startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+  await collectEvidence(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor: new FakeExecutor(),
+    checks: [],
+  });
 
   const criteria = [...defaultGoal().acceptance, ...builderItem().dod];
   recordVerdicts(db, {
@@ -299,6 +306,12 @@ test('Builder 记录 token 用量，耗尽时暂停升级但不压缩验证', as
   resumeGoal(db, goal.id, 'human-1', '预算已追加');
   commitWorkspace(db, { goalId: goal.id, workItemId: 'build' });
   startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+  await collectEvidence(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor: new FakeExecutor(),
+    checks: [],
+  });
 
   const criteria = [...defaultGoal().acceptance, ...builderItem().dod];
   const verdicts = recordVerdicts(db, {

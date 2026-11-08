@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
-import { submitPlan } from '../src/app/plans.ts';
+import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { instantiateRole } from '../src/app/roles.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
 import { startVerification } from '../src/app/verification.ts';
@@ -16,7 +16,7 @@ import {
   createTestGoal,
   createTestRepo,
   defaultGoal,
-  setupApproved,
+  verifierItem,
 } from './helpers.ts';
 
 const tempRoots: string[] = [];
@@ -68,8 +68,15 @@ test('计划提交时拒绝循环依赖', () => {
   );
 });
 
-test('前置工作项完成后才允许装载下游角色', async () => {
-  const { db, goal } = setupApproved();
+test('前置工作项可以先进入验证，下游 Builder 等待其完成后再执行', async () => {
+  const db = createTestDb();
+  const goal = createTestGoal(db);
+  const downstream = builderItem({ id: 'follow-up', dependsOn: ['build'], budgetTokens: 500 });
+  const plan = submitPlan(db, goal.id, {
+    workItems: [builderItem(), downstream, verifierItem()],
+    totalBudgetTokens: 2000,
+  }, 'planner');
+  approvePlan(db, plan.id, 'architect');
 
   assert.throws(
     () => instantiateRole(db, { goalId: goal.id, workItemId: 'verify' }),
@@ -89,6 +96,10 @@ test('前置工作项完成后才允许装载下游角色', async () => {
   });
   commitAndPush(db, goal.id);
   startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+  assert.throws(
+    () => instantiateRole(db, { goalId: goal.id, workItemId: downstream.id }),
+    /依赖 build 尚未完成/,
+  );
   await collectEvidence(db, {
     goalId: goal.id,
     workItemId: 'build',
@@ -108,4 +119,15 @@ test('前置工作项完成后才允许装载下游角色', async () => {
   const instance = instantiateRole(db, { goalId: goal.id, workItemId: 'verify' });
   assert.equal(instance.role, 'verifier');
   assert.equal(instance.subject, 'verifier-1');
+
+  const result = await runBuilder(db, {
+    goalId: goal.id,
+    workItemId: downstream.id,
+    executor: new FakeExecutor(),
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+    selfChecks: [],
+  });
+  assert.equal(result.status, 'succeeded', result.reason);
 });

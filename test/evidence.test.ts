@@ -11,6 +11,7 @@ import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
 import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
+import { findActiveWorkspace } from '../src/infra/store.ts';
 import { createTestRepo, setupApproved } from './helpers.ts';
 
 const tempRoots: string[] = [];
@@ -90,6 +91,8 @@ test('证据记录命令、环境、时间与哈希，他人可据此重跑', as
 
   assert.equal(collection.goalId, goal.id);
   assert.equal(collection.workItemId, 'build');
+  assert.match(collection.collectionId, /^[0-9a-f-]{36}$/);
+  assert.equal(collection.reworkRound, 1);
   assert.equal(collection.collectedAt, '2026-11-03T10:05:00.000Z');
   assert.match(collection.branch, /^feature\/sm-.+-build$/);
   assert.match(collection.head, /^[0-9a-f]{40}$/);
@@ -125,15 +128,55 @@ test('证据记录命令、环境、时间与哈希，他人可据此重跑', as
   );
   assert.ok(collected);
   const payload = collected.payload as {
+    collectionId: string;
     workspaceId: string;
     head: string;
     evidence: Array<{ hash: string }>;
   };
+  assert.equal(payload.collectionId, collection.collectionId);
   assert.equal(payload.workspaceId, collection.workspaceId);
   assert.equal(payload.head, collection.head);
   assert.deepEqual(
     payload.evidence.map((record) => record.hash),
     collection.evidence.map((record) => record.hash),
+  );
+});
+
+test('工作区存在未提交改动时不能采集证据', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+
+  await runBuilder(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor: new FakeExecutor((request) => {
+      if (request.command === 'fake-agent') {
+        writeFileSync(join(request.cwd as string, 'src', 'login.ts'), 'export const login = true;\n');
+      }
+      return {};
+    }),
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: 'fake-agent' },
+    selfChecks: [],
+  });
+  commitWorkspace(db, { goalId: goal.id, workItemId: 'build' });
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+
+  const workspace = findActiveWorkspace(db, goal.id, 'build');
+  assert.ok(workspace);
+  writeFileSync(join(workspace.path, 'src', 'dirty.ts'), 'export const dirty = true;\n');
+
+  await assert.rejects(
+    () =>
+      collectEvidence(db, {
+        goalId: goal.id,
+        workItemId: 'build',
+        executor: new FakeExecutor(),
+        checks: [],
+      }),
+    /未提交改动/,
   );
 });
 

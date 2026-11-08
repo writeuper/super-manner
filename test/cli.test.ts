@@ -6,13 +6,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
-import { commitWorkspace } from '../src/app/delivery.ts';
+import { listInbox } from '../src/app/audit-query.ts';
+import { collectEvidence } from '../src/app/evidence.ts';
 import { createGoal } from '../src/app/goals.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
+import { recordVerdicts } from '../src/app/verdicts.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { openDatabase } from '../src/infra/db.ts';
 import { getGoal } from '../src/infra/store.ts';
-import { builderItem, createTestRepo, defaultGoal } from './helpers.ts';
+import { builderItem, commitAndPush, createTestRepo, defaultGoal } from './helpers.ts';
 
 const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 const tempRoots: string[] = [];
@@ -73,13 +75,13 @@ async function approvedGoal(dbPath: string): Promise<string> {
   return goal.id;
 }
 
-test('CLI 可以从执行态进入验证态', async () => {
+test('CLI 可以从执行态进入验证态，判定通过后进入人工验收队列', async () => {
   const root = mkdtempSync(join(tmpdir(), 'manner-cli-'));
   tempRoots.push(root);
   const dbPath = join(root, 'manner.db');
   const goalId = await approvedGoal(dbPath);
 
-  const repo = createTestRepo();
+  const repo = createTestRepo({ bareRemote: true });
   tempRoots.push(repo.root);
   const db = openDatabase(dbPath);
   await runBuilder(db, {
@@ -91,7 +93,7 @@ test('CLI 可以从执行态进入验证态', async () => {
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
-  assert.equal(commitWorkspace(db, { goalId, workItemId: 'build' }).status, 'committed');
+  commitAndPush(db, goalId);
   db.close();
 
   const result = runCli(dbPath, ['verify', 'start', '--goal', goalId, '--by', 'verifier-1']);
@@ -107,6 +109,39 @@ test('CLI 可以从执行态进入验证态', async () => {
   const again = runCli(dbPath, ['verify', 'start', '--goal', goalId, '--by', 'verifier-1']);
   assert.equal(again.code, 1);
   assert.match(again.stderr, /不能进入验证/);
+
+  const submit = ['verify', 'submit', '--goal', goalId, '--by', 'verifier-1'];
+  const incomplete = runCli(dbPath, submit);
+  assert.equal(incomplete.code, 1);
+  assert.match(incomplete.stderr, /完成判定未通过/);
+
+  const verifying = openDatabase(dbPath);
+  await collectEvidence(verifying, {
+    goalId,
+    workItemId: 'build',
+    executor: new FakeExecutor(),
+    checks: [{ name: 'typecheck', command: 'fake-typecheck' }],
+  });
+  recordVerdicts(verifying, {
+    goalId,
+    workItemId: 'build',
+    verdicts: [...defaultGoal().acceptance, ...builderItem().dod].map((criterion) => ({
+      criterion, result: 'passed', note: '已核对',
+    })),
+  });
+  verifying.close();
+
+  const submitted = runCli(dbPath, submit);
+  assert.equal(submitted.code, 0, submitted.stderr);
+  assert.equal(JSON.parse(submitted.stdout).status, 'awaiting_acceptance');
+  assert.equal(runCli(dbPath, submit).stdout, submitted.stdout);
+  const awaiting = openDatabase(dbPath);
+  assert.equal(listInbox(awaiting, { goalId })[0]?.kind, 'acceptance');
+  awaiting.close();
+
+  const accepted = runCli(dbPath, ['acceptance', 'decide', '--goal', goalId, '--decision', 'accept', '--by', 'human']);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.equal(JSON.parse(accepted.stdout).goalStatus, 'completed');
 });
 
 test('CLI 在缺少工作区或提交时拒绝进入验证', async () => {

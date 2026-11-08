@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { appendAudit } from '../infra/audit.ts';
-import { listGrantsForGoal, revokeGrantsForGoal } from '../infra/store.ts';
+import { appendAudit, listAuditEvents } from '../infra/audit.ts';
+import { listGrantsForGoal, revokeGrantsForGoal, transaction } from '../infra/store.ts';
 import { computeCompletion } from './completion.ts';
 import { cancelGoal, getGoalOrThrow, setGoalStatus } from './goals.ts';
 
@@ -22,6 +22,56 @@ export interface AcceptanceDecisionRecord {
   goalStatus: string;
   complete: boolean;
   revokedGrants: number;
+}
+
+/** 验证完成后将目标交给人工验收。重复提交保留原来的入队时间。 */
+export function submitForAcceptance(
+  db: DatabaseSync,
+  input: { goalId: string; actor?: string },
+  now = new Date(),
+): { goalId: string; status: 'awaiting_acceptance'; submittedAt: string } {
+  return transaction(db, () => {
+    const goal = getGoalOrThrow(db, input.goalId);
+    if (goal.status !== 'verifying' && goal.status !== 'awaiting_acceptance') {
+      throw new Error(`目标当前状态不能提交验收：${goal.status}`);
+    }
+    const assessment = computeCompletion(db, goal.id, now);
+    if (!assessment.goal.complete) {
+      throw new Error(`完成判定未通过，不能提交验收：${assessment.goal.reasons.join('；')}`);
+    }
+    if (goal.status === 'awaiting_acceptance') {
+      return {
+        goalId: goal.id,
+        status: 'awaiting_acceptance',
+        submittedAt: latestSubmissionAt(db, goal.id) ?? goal.updatedAt,
+      };
+    }
+
+    const actor = input.actor ?? 'verifier';
+    const submitted = setGoalStatus(db, goal, 'awaiting_acceptance', actor, now);
+    appendAudit(
+      db,
+      {
+        actor,
+        type: 'acceptance.submitted',
+        goalId: goal.id,
+        payload: { submittedAt: submitted.updatedAt, complete: true },
+      },
+      submitted.updatedAt,
+    );
+    return { goalId: submitted.id, status: 'awaiting_acceptance', submittedAt: submitted.updatedAt };
+  });
+}
+
+function latestSubmissionAt(db: DatabaseSync, goalId: string): string | undefined {
+  const events = listAuditEvents(db, goalId);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'acceptance.submitted') continue;
+    const submittedAt = (event.payload as { submittedAt?: unknown }).submittedAt;
+    if (typeof submittedAt === 'string') return submittedAt;
+  }
+  return undefined;
 }
 
 /**

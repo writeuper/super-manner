@@ -35,8 +35,8 @@ export function assertGoalVerifying(db: DatabaseSync, goalId: string, operation:
 /**
  * 从执行态进入验证态。
  *
- * 进入前要求每个 builder 工作项都已有活跃工作区与提交检查点，
- * 避免在实现尚未落地时就开始采集证据。
+ * 无前置依赖的 Builder 必须先提交。依赖其他工作项的 Builder
+ * 需要等前置工作项在验证阶段完成后才能开始。
  */
 export function startVerification(
   db: DatabaseSync,
@@ -54,7 +54,7 @@ export function startVerification(
   const checkpoints = getGoalCheckpoints(db, goal.id);
   const missing: string[] = [];
   for (const item of plan.workItems) {
-    if (item.role !== 'builder') continue;
+    if (item.role !== 'builder' || item.dependsOn.length > 0) continue;
     if (!findActiveWorkspace(db, goal.id, item.id)) {
       missing.push(`工作项 ${item.id} 没有活跃工作区`);
     }

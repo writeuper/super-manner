@@ -101,19 +101,24 @@ manner verify judge --goal <goalId> --item build --file verdicts.json --by verif
 
 | 级别 | 完成条件 |
 | --- | --- |
-| 工作项 | 有最近一次证据采集；有逐条判定且没有"不通过"或"无法判定"；判定的 `evaluatedHead` 与证据 `head` 一致；证据 `head` 与最新提交检查点一致；builder 工作项还必须已成功推送，且推送 SHA 与最新提交一致 |
+| 工作项 | 有最近一次证据采集；证据绑定本轮提交与采集批次；逐条判定绑定同一 `collectionId` 且没有"不通过"或"无法判定"；证据 `head`、判定 `evaluatedHead`、最新提交检查点与推送 SHA 一致；builder 工作区无未提交改动且 HEAD 等于交付提交 |
 | 目标 | 已批准计划里的全部工作项都完成 |
+
+证据采集只针对待交付提交：工作区必须干净，HEAD 必须等于最新提交检查点；采集结果带 `collectionId` 与 `reworkRound`。判定必须绑定最新采集批次和当前轮次，换一批采集或返工后旧判定自动失效。完成判定在人工接受前会再次核对工作区状态。
 
 返回每个工作项的标准数、通过数、不通过数、无法判定数、未完成原因与时间戳，
 以及目标级结论。判定只读，不改变目标状态；接受或返工由 S3-06 的人工决定推进。
 
-验证阶段由 `startVerification` 开启：目标必须处于 `executing`，builder 工作项必须有活跃工作区与提交检查点。进入 `verifying` 后，证据采集、逐条判定与验证上下文构建才被允许；这样返工后若不重新采集证据，完成判定会因提交不匹配而阻塞。
+验证阶段由 `manner verify start` 开启。目标必须处于 `executing`，无前置依赖的 Builder 工作项必须有活跃工作区与提交检查点。下游 Builder 等前置工作项验证完成后，可以在目标处于 `verifying` 时开始。返工产生新提交后，证据仍指向旧提交时，完成判定会阻塞。
+
+`manner verify submit --goal <id>` 在完成判定通过后将目标转为 `awaiting_acceptance`，出现在 `manner audit inbox` 中。人工验收前会重新计算完成判定。
 
 每次判定都追加 `verifier.completion_assessed`，失败结论同样留痕，避免"重跑到绿"覆盖历史。
 
 ```bash
 manner verify start --goal <goalId> --by verifier-1
 manner verify completion --goal <goalId> --by verifier-1
+manner verify submit --goal <goalId> --by verifier-1
 ```
 
 ## 6. S3-05 验收视图
@@ -192,6 +197,11 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | S3-04 不通过不得完成 | `completion.test.ts` · 有"不通过"或"无法判定"时不得完成，改判后以最新一次为准 |
 | S3-04 任一工作项未完成即阻塞目标 | `completion.test.ts` · 任一工作项缺证据或缺判定时目标不得完成 |
 | S3-04 证据时效 | `completion.test.ts` · 证据之后出现新提交时不得完成；返工后未重新采集证据不得完成 |
+| S3-04 采集批次绑定 | `completion.test.ts` · 同一提交重新采集证据后必须重新判定 |
+| S3-04 返工轮次绑定 | `completion.test.ts` · 返工但提交未变化时，上一轮证据与判定不得完成验收 |
+| S3-04 工作区洁净 | `completion.test.ts` · 工作区存在未提交改动时不得完成 |
+| S3-02 采集前洁净 | `evidence.test.ts` · 工作区存在未提交改动时不能采集证据 |
+| S3-06 验收前复查 | `acceptance.test.ts` · 提交验收后仍会重新检查完成条件 |
 | S3-05 视图汇总与可验收标注 | `acceptance-view.test.ts` · 验收视图汇总目标、差异、证据、风险与待决，并标注可验收 |
 | S3-05 未完成时列出阻塞原因 | `acceptance-view.test.ts` · 未完成时视图列出阻塞原因 |
 | S3-06 接受后完成并吊销授权 | `acceptance.test.ts` · 接受后目标完成、授权全部失效且不能再操作 |
@@ -204,17 +214,17 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 
 | 边界 | 现状 | 去向 |
 | --- | --- | --- |
-| 未提交改动 | 验证上下文以已提交差异为主，未跟踪文件只出现在文件清单 | 要求 Builder 先提交 |
+| 未提交改动 | 证据采集与完成判定都会拒绝有未提交改动的工作区 | 需要时支持显式快照 |
 | 差异截断 | 超过 20000 字符截断并标注 | 需要时按文件分段 |
 | 提示词版本 | 只记录哈希，不保存正文 | S3-05 验收视图可保存快照 |
 | 证据输出 | 每条流只保留尾部 4000 字符，哈希基于保留内容 | 需要完整日志时另行落盘 |
 | 证据来源 | 只重跑自检命令，不重新执行 Agent | 复杂验证由 S3-03 判定补充 |
 | 判定录入 | 由验证者（人或 Agent）产出 JSON 后写入，不在服务内自动调用模型 | S3-07 端到端可编排调用 |
 | 判定粒度 | 以标准文本为键，跨来源同文标准合并为一条 | 需要区分来源时改结构化 id |
-| 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | 由 `verify start` 进入验证，再由 S3-06 的人工验收决定推进 |
+| 完成判定 | `verify completion` 查询结果，`verify submit` 将通过的目标交给人工验收 | `acceptance decide` 记录最终决定 |
 | 验收决定入口 | 只提供 CLI，需要人显式执行；没有推送通知或超时自动决定 | 需要时接 IM 卡片或工作流 |
-| 返工后的证据 | 旧证据与旧判定保留；新提交后必须重新采集证据，完成判定按 `evaluatedHead` 与最新提交核对 | 追加顺序保留，head 不匹配即阻塞 |
-| 证据时效 | 已绑定判定、证据、最新提交与推送 SHA；工作区中未提交的改动仍不纳入校验 | 需要时补工作区洁净度检查 |
+| 返工后的证据 | 旧证据与旧判定保留；采集批次与返工轮次绑定，换批或返工后必须重新采集并重新判定 | 追加顺序保留，collectionId / reworkRound 不匹配即阻塞 |
+| 证据时效 | 已绑定采集批次、返工轮次、证据/判定/最新提交/推送 SHA；采集与验收都会拒绝未提交改动 | 需要时补完整工作区快照 |
 | 验收视图 | 单文件 HTML，无脚本；未跟踪文件的改动内容不展示 | 需要时内嵌完整差异或附件 |
 | 返工闭环 | 由测试串起 `builder run` / 验证 / 验收决定，CLI 仍是分步入口 | 需要时补一键脚本 |
 | 视图审计 | 只记录结论与生成时间，不保存 HTML 快照 | 需要归档时把文件纳入产物 |

@@ -5,6 +5,7 @@ import { assertDependenciesComplete } from './dependencies.ts';
 import { getLatestEvidence } from './evidence.ts';
 import { getApprovedPlan } from './plans.ts';
 import { classifyVerdicts, type FailureKind } from './retries.ts';
+import { reworkRound } from './rounds.ts';
 import { assertGoalVerifying } from './verification.ts';
 
 export type VerdictResult = 'passed' | 'failed' | 'undetermined';
@@ -37,8 +38,12 @@ export interface VerdictRecord {
   goalId: string;
   workItemId: string;
   recordedAt: string;
-  /** 判定所依据的证据对应的提交；没有证据时为空。 */
+  /** 判定所依据的证据对应的提交。 */
   evaluatedHead?: string;
+  /** 判定绑定的证据采集批次；换一批采集后旧判定自动失效。 */
+  evidenceCollectionId?: string;
+  /** 判定所属的返工轮次。 */
+  reworkRound?: number;
   verdicts: Verdict[];
   summary: {
     total: number;
@@ -90,7 +95,16 @@ export function recordVerdicts(
   const known = new Set(criteria);
   const seen = new Set<string>();
   const latestEvidence = getLatestEvidence(db, goal.id, item.id);
-  const evidence = latestEvidence?.evidence ?? [];
+  if (!latestEvidence) {
+    throw new Error(`工作项 ${item.id} 没有可绑定的证据采集，不能记录判定`);
+  }
+  const round = reworkRound(db, goal.id);
+  if (latestEvidence.reworkRound !== round) {
+    throw new Error(
+      `最新证据属于第 ${latestEvidence.reworkRound} 轮，当前为第 ${round} 轮，请重新采集证据`,
+    );
+  }
+  const evidence = latestEvidence.evidence;
   const evidenceKeys = new Set(evidence.flatMap((record) => [record.id, record.hash]));
 
   for (const verdict of input.verdicts) {
@@ -132,7 +146,9 @@ export function recordVerdicts(
     goalId: goal.id,
     workItemId: item.id,
     recordedAt,
-    ...(latestEvidence ? { evaluatedHead: latestEvidence.head } : {}),
+    evaluatedHead: latestEvidence.head,
+    evidenceCollectionId: latestEvidence.collectionId,
+    reworkRound: round,
     verdicts,
     summary: summarize(verdicts),
     ...(failureKind ? { failureKind } : {}),

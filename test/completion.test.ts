@@ -241,3 +241,44 @@ test('返工后未重新采集证据不得完成', async () => {
   assert.equal(assessment.goal.complete, false);
   assert.match(assessment.goal.reasons.join('；'), /证据对应提交与最新提交不一致/);
 });
+
+test('同一提交重新采集证据后必须重新判定', async () => {
+  const { db, goalId } = singleItemPlan();
+  await verifiedBuild(db, goalId);
+
+  await collectEvidence(db, {
+    goalId,
+    workItemId: 'build',
+    executor: new FakeExecutor(),
+    checks: [{ name: 'typecheck', command: 'fake-typecheck' }],
+  });
+
+  const assessment = assessCompletion(db, { goalId });
+  assert.equal(assessment.goal.complete, false);
+  assert.match(assessment.goal.reasons.join('；'), /未绑定最新证据采集/);
+});
+
+test('返工但提交未变化时，上一轮证据与判定不得完成验收', async () => {
+  const { db, goalId } = singleItemPlan();
+  await verifiedBuild(db, goalId);
+
+  decideAcceptance(db, { goalId, decision: 'rework', reason: '重新确认', actor: 'human-1' });
+  startVerification(db, { goalId, actor: 'verifier-1' });
+
+  const assessment = assessCompletion(db, { goalId });
+  assert.equal(assessment.goal.complete, false);
+  assert.match(assessment.goal.reasons.join('；'), /证据属于第 1 轮，当前为第 2 轮/);
+});
+
+test('工作区存在未提交改动时不得完成', async () => {
+  const { db, goalId } = singleItemPlan();
+  await verifiedBuild(db, goalId);
+
+  const workspace = findActiveWorkspace(db, goalId, 'build');
+  assert.ok(workspace);
+  writeFileSync(join(workspace.path, 'src', 'login.ts'), 'export const login = "dirty";\n');
+
+  const assessment = assessCompletion(db, { goalId });
+  assert.equal(assessment.goal.complete, false);
+  assert.match(assessment.goal.reasons.join('；'), /工作区存在未提交改动/);
+});

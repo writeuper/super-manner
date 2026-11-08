@@ -2,15 +2,20 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Checkpoint, WorkItem } from '../domain/types.ts';
 import { listAuditEvents } from '../infra/audit.ts';
 import { listCheckpointsForItem } from '../infra/store.ts';
+import { reworkRound } from './rounds.ts';
 
 interface CollectedEvidence {
   workItemId?: string;
   head?: string;
+  collectionId?: string;
+  reworkRound?: number;
 }
 
 interface RecordedVerdicts {
   workItemId?: string;
   evaluatedHead?: string;
+  evidenceCollectionId?: string;
+  reworkRound?: number;
   summary?: { complete?: boolean };
 }
 
@@ -37,15 +42,26 @@ export function dependencyReasons(db: DatabaseSync, goalId: string, dependency: 
   const checkpoints = listCheckpointsForItem(db, goalId, dependency.id);
   const commitSha = checkpointSha(checkpoints.filter((checkpoint) => checkpoint.kind === 'commit').at(-1));
   const pushSha = checkpointSha(checkpoints.filter((checkpoint) => checkpoint.kind === 'push').at(-1));
+  const round = reworkRound(db, goalId);
 
   const reasons: string[] = [];
   if (!evidence?.head) reasons.push('没有证据');
   if (!verdicts) reasons.push('没有逐条判定');
   else if (!verdicts.summary?.complete) reasons.push('判定未全部通过');
 
+  if (evidence && evidence.reworkRound !== round) {
+    reasons.push('证据属于上一轮返工');
+  }
+  if (verdicts && (verdicts.reworkRound ?? 1) !== round) {
+    reasons.push('判定属于上一轮返工');
+  }
+
   if (evidence?.head && verdicts) {
     if (!verdicts.evaluatedHead) reasons.push('判定未绑定证据提交');
     else if (verdicts.evaluatedHead !== evidence.head) reasons.push('判定与证据提交不一致');
+    if (verdicts.evidenceCollectionId !== evidence.collectionId) {
+      reasons.push('判定未绑定最新证据采集');
+    }
   }
   if (evidence?.head && commitSha && evidence.head !== commitSha) {
     reasons.push('证据与最新提交不一致');

@@ -17,7 +17,7 @@ import { collectEvidence } from './app/evidence.ts';
 import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { assessCompletion } from './app/completion.ts';
 import { buildAcceptanceView } from './app/acceptance-view.ts';
-import { decideAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
+import { decideAcceptance, submitForAcceptance, type AcceptanceDecision } from './app/acceptance.ts';
 import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
 import { buildReview, generateReview } from './app/review.ts';
@@ -191,6 +191,7 @@ const USAGE = `Super-Manner CLI
   manner verify evidence --goal <id> --item <workItemId> [--by <id>]
   manner verify judge --goal <id> --item <workItemId> --file verdicts.json [--by <id>]
   manner verify completion --goal <id> [--by <id>]
+  manner verify submit --goal <id> [--by <id>]
   manner verify view --goal <id> [--out <file>] [--by <id>]
   manner acceptance decide --goal <id> --decision accept|rework|close [--reason <text>] --by <id>
   manner escalation list [--pending]
@@ -488,6 +489,10 @@ async function main(): Promise<void> {
               actor: one(args, 'by'),
             }),
           );
+          return;
+        }
+        if (subcommand === 'submit') {
+          print(submitForAcceptance(db, { goalId: required(args, 'goal'), actor: one(args, 'by') }));
           return;
         }
         if (subcommand === 'view') {

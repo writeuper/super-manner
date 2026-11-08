@@ -1,10 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Checkpoint } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
+import { runGit } from '../infra/git.ts';
+import { findActiveWorkspace } from '../infra/store.ts';
 import { getLatestCheckpoint } from './checkpoints.ts';
 import { getLatestEvidence } from './evidence.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
+import { reworkRound } from './rounds.ts';
 import { getLatestVerdicts } from './verdicts.ts';
 import { assertGoalVerifying } from './verification.ts';
 
@@ -19,6 +22,8 @@ export interface WorkItemCompletion {
   evidenceCollectedAt?: string;
   evidenceHead?: string;
   evaluatedHead?: string;
+  evidenceCollectionId?: string;
+  reworkRound?: number;
   deliveryHead?: string;
   complete: boolean;
   reasons: string[];
@@ -58,6 +63,7 @@ export function computeCompletion(
   const goal = getGoalOrThrow(db, goalId);
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能做完成判定');
+  const round = reworkRound(db, goal.id);
 
   const workItems: WorkItemCompletion[] = plan.workItems.map((item) => {
     const verdicts = getLatestVerdicts(db, goal.id, item.id);
@@ -78,11 +84,21 @@ export function computeCompletion(
     }
     if (!evidence) reasons.push('没有可复用的证据');
 
+    if (evidence && evidence.reworkRound !== round) {
+      reasons.push(`证据属于第 ${evidence.reworkRound} 轮，当前为第 ${round} 轮`);
+    }
+
     if (verdicts && evidence) {
       if (!verdicts.evaluatedHead) {
         reasons.push('逐条判定未绑定证据提交');
       } else if (verdicts.evaluatedHead !== evidence.head) {
         reasons.push('逐条判定对应的提交与最新证据不一致');
+      }
+      if (verdicts.evidenceCollectionId !== evidence.collectionId) {
+        reasons.push('逐条判定未绑定最新证据采集');
+      }
+      if ((verdicts.reworkRound ?? 1) !== evidence.reworkRound) {
+        reasons.push('逐条判定与证据不属于同一返工轮次');
       }
     }
 
@@ -110,6 +126,19 @@ export function computeCompletion(
       );
     }
 
+    if (item.role === 'builder' && commitHead) {
+      const workspace = findActiveWorkspace(db, goal.id, item.id);
+      if (workspace) {
+        const currentHead = runGit(['rev-parse', 'HEAD'], { cwd: workspace.path }).stdout.trim();
+        if (currentHead && currentHead !== commitHead) {
+          reasons.push('工作区当前提交与交付提交不一致');
+        }
+        if (runGit(['status', '--porcelain'], { cwd: workspace.path }).stdout.trim().length > 0) {
+          reasons.push('工作区存在未提交改动');
+        }
+      }
+    }
+
     const result: WorkItemCompletion = {
       workItemId: item.id,
       title: item.title,
@@ -123,6 +152,8 @@ export function computeCompletion(
     if (verdicts) result.verdictsRecordedAt = verdicts.recordedAt;
     if (evidence) result.evidenceCollectedAt = evidence.collectedAt;
     if (evidence) result.evidenceHead = evidence.head;
+    if (evidence) result.evidenceCollectionId = evidence.collectionId;
+    if (evidence) result.reworkRound = evidence.reworkRound;
     if (verdicts?.evaluatedHead) result.evaluatedHead = verdicts.evaluatedHead;
     if (commitHead) result.deliveryHead = commitHead;
     else if (pushHead) result.deliveryHead = pushHead;

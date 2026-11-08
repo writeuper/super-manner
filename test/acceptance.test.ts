@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { decideAcceptance } from '../src/app/acceptance.ts';
+import { decideAcceptance, submitForAcceptance } from '../src/app/acceptance.ts';
 import { runBuilder } from '../src/app/builder.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
 import { getGoalOrThrow } from '../src/app/goals.ts';
@@ -11,7 +11,7 @@ import { recordVerdicts } from '../src/app/verdicts.ts';
 import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
-import { listGrantsForGoal } from '../src/infra/store.ts';
+import { findActiveWorkspace, listGrantsForGoal } from '../src/infra/store.ts';
 import { builderItem, commitAndPush, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
 
 const tempRoots: string[] = [];
@@ -124,6 +124,24 @@ test('完成判定未通过时不能接受', async () => {
     /完成判定未通过/,
   );
   assert.equal(getGoalOrThrow(db, goalId).status, 'verifying');
+});
+
+test('提交验收后仍会重新检查完成条件', async () => {
+  const { db, goalId } = singleItemPlan();
+  await verifiedBuild(db, goalId);
+
+  const submitted = submitForAcceptance(db, { goalId, actor: 'verifier-1' });
+  assert.equal(submitted.status, 'awaiting_acceptance');
+
+  const workspace = findActiveWorkspace(db, goalId, 'build');
+  assert.ok(workspace);
+  writeFileSync(join(workspace.path, 'src', 'login.ts'), 'export const login = "dirty";\n');
+
+  assert.throws(
+    () => decideAcceptance(db, { goalId, decision: 'accept', actor: 'human-1' }),
+    /完成判定未通过/,
+  );
+  assert.equal(getGoalOrThrow(db, goalId).status, 'awaiting_acceptance');
 });
 
 test('返工回到执行态，历史结论保留并可产生新 Run', async () => {
