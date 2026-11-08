@@ -20,6 +20,25 @@ export function branchNameFor(goalId: string, workItemId: string): string {
   return `feature/sm-${goalPart}-${sanitize(workItemId)}`;
 }
 
+/**
+ * 下游工作项的起始分支：取最后一个上游工作项的分支，确保能看到上游交付。
+ * 多前置合并暂不在 P1 实现范围内，先按单链处理。
+ */
+export function dependencyBaseBranch(
+  goalId: string,
+  item: { dependsOn: string[] },
+  repoDir: string,
+  fallback: string,
+): string {
+  const dependencyId = item.dependsOn.at(-1);
+  if (!dependencyId) return fallback;
+  const branch = branchNameFor(goalId, dependencyId);
+  if (!branchExists(repoDir, branch)) {
+    throw new Error(`上游工作项 ${dependencyId} 的分支不存在：${branch}`);
+  }
+  return branch;
+}
+
 function sanitize(value: string): string {
   const cleaned = value
     .toLowerCase()

@@ -96,6 +96,10 @@ test('CLI 可以从执行态进入验证态，判定通过后进入人工验收�
   commitAndPush(db, goalId);
   db.close();
 
+  const readiness = runCli(dbPath, ['orchestrate', 'ready', '--goal', goalId]);
+  assert.equal(readiness.code, 0, readiness.stderr);
+  assert.deepEqual(JSON.parse(readiness.stdout).ready, ['build']);
+
   const result = runCli(dbPath, ['verify', 'start', '--goal', goalId, '--by', 'verifier-1']);
   assert.equal(result.code, 0, result.stderr);
   const payload = JSON.parse(result.stdout) as { status: string; workItems: string[] };

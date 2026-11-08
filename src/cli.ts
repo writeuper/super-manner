@@ -21,6 +21,7 @@ import { decideAcceptance, submitForAcceptance, type AcceptanceDecision } from '
 import { getGoalCheckpoints } from './app/checkpoints.ts';
 import { extendBudget, getBudgetStatus, recordTokenUsage } from './app/budget.ts';
 import { buildReview, generateReview } from './app/review.ts';
+import { buildReadiness } from './app/orchestration.ts';
 import {
   activateVersion,
   importGoldenTasks,
@@ -193,6 +194,8 @@ const USAGE = `Super-Manner CLI
   manner verify completion --goal <id> [--by <id>]
   manner verify submit --goal <id> [--by <id>]
   manner verify view --goal <id> [--out <file>] [--by <id>]
+  manner orchestrate ready --goal <id> [--limit 1]
+  manner orchestrate next --goal <id> [--limit 1]
   manner acceptance decide --goal <id> --decision accept|rework|close [--reason <text>] --by <id>
   manner escalation list [--pending]
   manner escalation decide <id> --by <id> --approve|--deny [--second <id>] [--reason <text>]
@@ -574,6 +577,25 @@ async function main(): Promise<void> {
               resource,
             }),
           );
+          return;
+        }
+        break;
+      }
+
+      case 'orchestrate': {
+        const goalId = required(args, 'goal');
+        const limitArg = one(args, 'limit');
+        const limit = limitArg === undefined ? undefined : Number(limitArg);
+        if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
+          throw new Error(`--limit 必须是正整数：${limitArg}`);
+        }
+        if (subcommand === 'ready') {
+          print(buildReadiness(db, goalId, limit));
+          return;
+        }
+        if (subcommand === 'next') {
+          const report = buildReadiness(db, goalId, limit);
+          print({ goalId, next: report.ready[0] ?? null, concurrency: report.concurrency });
           return;
         }
         break;

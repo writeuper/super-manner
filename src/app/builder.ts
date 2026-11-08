@@ -21,7 +21,8 @@ import {
   type FailureKind,
   type RetryState,
 } from './retries.ts';
-import { createWorkspace } from './workspaces.ts';
+import { createWorkspace, dependencyBaseBranch } from './workspaces.ts';
+import { listRunningAgents, MAX_CONCURRENT_RUNS } from './processes.ts';
 
 export const DEFAULT_AGENT_TIMEOUT_MS = 15 * 60 * 1000;
 export const DEFAULT_SELF_CHECK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -187,6 +188,9 @@ export async function runBuilder(
     actor: input.actor,
   });
 
+  const baseBranch = input.repoDir
+    ? dependencyBaseBranch(goal.id, item, input.repoDir, goal.baseBranch)
+    : undefined;
   const workspace =
     findActiveWorkspace(db, goal.id, item.id) ??
     (input.repoDir
@@ -195,6 +199,7 @@ export async function runBuilder(
           workItemId: item.id,
           repoDir: input.repoDir,
           worktreeRoot: input.worktreeRoot,
+          ...(baseBranch ? { baseBranch } : {}),
           actor: input.actor,
         })
       : undefined);
@@ -265,6 +270,48 @@ export async function runBuilder(
       runId,
       status: 'blocked',
       reason: retry.reason ?? '同一原因连续失败，已转人工处理',
+      goalId: goal.id,
+      workItemId: item.id,
+      workspaceId: workspace.id,
+      branch: workspace.branch,
+      role,
+      agent: null,
+      selfChecks: [],
+      changedFiles: [],
+      diffStat: '',
+      retry,
+    };
+  }
+
+  const running = listRunningAgents(db, goal.id);
+  const sameItemRun = running.find((run) => run.workItemId === item.id);
+  const otherRuns = running.filter((run) => run.workItemId !== item.id);
+  const concurrencyReason = sameItemRun
+    ? `工作项 ${item.id} 已有运行中的 Agent`
+    : otherRuns.length >= MAX_CONCURRENT_RUNS
+      ? `并发上限 ${MAX_CONCURRENT_RUNS}：已有 ${otherRuns.length} 个运行中的 Agent`
+      : undefined;
+  if (concurrencyReason) {
+    appendAudit(
+      db,
+      {
+        actor: input.actor ?? role.subject,
+        type: 'builder.run_blocked',
+        goalId: goal.id,
+        subject: role.subject,
+        payload: {
+          runId,
+          workItemId: item.id,
+          reason: concurrencyReason,
+          activeRunIds: running.map((run) => run.runId),
+        },
+      },
+      now.toISOString(),
+    );
+    return {
+      runId,
+      status: 'blocked',
+      reason: concurrencyReason,
       goalId: goal.id,
       workItemId: item.id,
       workspaceId: workspace.id,

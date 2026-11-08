@@ -8,6 +8,9 @@ export interface RunningAgent {
   workItemId?: string;
 }
 
+/** P1 的默认并发上限：同一目标同时只跑一个 Agent。 */
+export const MAX_CONCURRENT_RUNS = 1;
+
 /**
  * 从审计链还原仍然存活的 Agent 进程。
  *

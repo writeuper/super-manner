@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rmSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
@@ -8,7 +8,9 @@ import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { instantiateRole } from '../src/app/roles.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
 import { startVerification } from '../src/app/verification.ts';
+import { branchNameFor } from '../src/app/workspaces.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
+import { findActiveWorkspace } from '../src/infra/store.ts';
 import {
   builderItem,
   commitAndPush,
@@ -27,11 +29,20 @@ after(() => {
 
 class FakeExecutor implements Executor {
   readonly name = 'fake';
+  private readonly handler: (request: ExecutorRequest) => Partial<ExecutorResult>;
+
+  constructor(
+    handler: (request: ExecutorRequest) => Partial<ExecutorResult> = (request) => {
+      if (request.command === 'fake-agent') {
+        writeFileSync(join(request.cwd as string, 'src', 'login.ts'), 'export const login = true;\n');
+      }
+      return {};
+    },
+  ) {
+    this.handler = handler;
+  }
 
   async run(request: ExecutorRequest): Promise<ExecutorResult> {
-    if (request.command === 'fake-agent') {
-      writeFileSync(join(request.cwd as string, 'src', 'login.ts'), 'export const login = true;\n');
-    }
     return {
       status: 'succeeded',
       exitCode: 0,
@@ -41,6 +52,7 @@ class FakeExecutor implements Executor {
       startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(),
       durationMs: 1,
+      ...this.handler(request),
     };
   }
 }
@@ -123,11 +135,21 @@ test('前置工作项可以先进入验证，下游 Builder 等待其完成后�
   const result = await runBuilder(db, {
     goalId: goal.id,
     workItemId: downstream.id,
-    executor: new FakeExecutor(),
+    executor: new FakeExecutor((request) => {
+      if (request.command === 'fake-agent') {
+        writeFileSync(join(request.cwd as string, 'src', 'follow-up.ts'), 'export const followUp = true;\n');
+      }
+      return {};
+    }),
     repoDir: repo.repoDir,
     worktreeRoot: join(repo.root, 'worktrees'),
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
   assert.equal(result.status, 'succeeded', result.reason);
+
+  const workspace = findActiveWorkspace(db, goal.id, downstream.id);
+  assert.ok(workspace);
+  assert.equal(workspace.baseBranch, branchNameFor(goal.id, 'build'));
+  assert.ok(existsSync(join(workspace.path, 'src', 'login.ts')));
 });
