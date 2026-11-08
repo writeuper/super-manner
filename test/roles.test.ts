@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { instantiateRole } from '../src/app/roles.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { listGrantsForGoal, revokeGrantsForGoal } from '../src/infra/store.ts';
-import { builderItem, createTestDb, createTestGoal, setupApproved } from './helpers.ts';
+import { builderItem, createTestDb, createTestGoal, setupApproved, verifierItem } from './helpers.ts';
 
 test('装载 builder 时能力与授权一致', () => {
   const { db, goal } = setupApproved();
@@ -23,13 +24,34 @@ test('装载 builder 时能力与授权一致', () => {
 });
 
 test('装载 verifier 时读取自己的授权', () => {
-  const { db, goal } = setupApproved();
+  const db = createTestDb();
+  const goal = createTestGoal(db);
+  const plan = submitPlan(
+    db,
+    goal.id,
+    {
+      workItems: [builderItem(), verifierItem({ dependsOn: [] })],
+      totalBudgetTokens: 1500,
+      pendingDecisions: [],
+    },
+    'planner',
+  );
+  approvePlan(db, plan.id, 'architect');
 
   const instance = instantiateRole(db, { goalId: goal.id, workItemId: 'verify' });
 
   assert.equal(instance.role, 'verifier');
   assert.equal(instance.subject, 'verifier-1');
   assert.deepEqual(instance.actions, ['repo.read', 'pr.review', 'ci.rerun']);
+});
+
+test('依赖工作项未完成时不能装载下游角色', () => {
+  const { db, goal } = setupApproved();
+
+  assert.throws(
+    () => instantiateRole(db, { goalId: goal.id, workItemId: 'verify' }),
+    /依赖 build 尚未完成/,
+  );
 });
 
 test('授权动作超出角色上限时拒绝装载', () => {

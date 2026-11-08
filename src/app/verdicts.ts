@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { appendAudit, listAuditEvents } from '../infra/audit.ts';
+import { assertDependenciesComplete } from './dependencies.ts';
 import { getLatestEvidence } from './evidence.ts';
 import { getApprovedPlan } from './plans.ts';
 import { classifyVerdicts, type FailureKind } from './retries.ts';
@@ -82,6 +83,8 @@ export function recordVerdicts(
   if (!plan) throw new Error('目标没有已批准的计划，不能记录判定');
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
   if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);
+
+  assertDependenciesComplete(db, goal.id, item, plan.workItems);
 
   const criteria = [...new Set([...goal.acceptance, ...item.dod])];
   const known = new Set(criteria);

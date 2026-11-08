@@ -6,6 +6,7 @@ import { runGit } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { detectSelfChecks, DEFAULT_SELF_CHECK_TIMEOUT_MS, type SelfCheckSpec } from './builder.ts';
+import { assertDependenciesComplete } from './dependencies.ts';
 import { getApprovedPlan } from './plans.ts';
 import { assertGoalVerifying } from './verification.ts';
 
@@ -77,6 +78,8 @@ export async function collectEvidence(
   if (!plan) throw new Error('目标没有已批准的计划，不能采集证据');
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
   if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);
+
+  assertDependenciesComplete(db, goal.id, item, plan.workItems);
 
   const workspace = findActiveWorkspace(db, goal.id, item.id);
   if (!workspace) {

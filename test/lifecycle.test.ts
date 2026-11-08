@@ -18,6 +18,7 @@ import { recordVerdicts } from '../src/app/verdicts.ts';
 import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
+import { createLocalExecutor } from '../src/infra/executor.ts';
 import { listEscalations, listGrantsForGoal } from '../src/infra/store.ts';
 import {
   BUILDER,
@@ -59,6 +60,21 @@ class FakeExecutor implements Executor {
       ...this.handler(request),
     };
   }
+}
+
+async function waitForAudit(
+  db: ReturnType<typeof createTestDb>,
+  goalId: string,
+  type: string,
+  timeoutMs = 5000,
+) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const event = listAuditEvents(db, goalId).find((candidate) => candidate.type === type);
+    if (event) return event;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`等待审计事件超时：${type}`);
 }
 
 function builderInput(
@@ -291,4 +307,45 @@ test('Builder 记录 token 用量，耗尽时暂停升级但不压缩验证', as
     verdicts: criteria.map((criterion) => ({ criterion, result: 'passed', note: '核对通过' })),
   });
   assert.equal(verdicts.verdicts.length, criteria.length);
+});
+
+test('取消目标会终止已启动的 Agent 进程', async () => {
+  const { db, goal } = setupApproved();
+  const repo = createTestRepo();
+  tempRoots.push(repo.root);
+
+  const pending = runBuilder(db, {
+    goalId: goal.id,
+    workItemId: 'build',
+    executor: createLocalExecutor(),
+    repoDir: repo.repoDir,
+    worktreeRoot: join(repo.root, 'worktrees'),
+    agent: { command: process.execPath, args: ['-e', 'setTimeout(() => {}, 60000)'] },
+    selfChecks: [],
+  });
+
+  const spawned = await waitForAudit(db, goal.id, 'builder.run_spawned');
+  const runId = (spawned.payload as { runId: string }).runId;
+  const pid = (spawned.payload as { pid: number }).pid;
+  assert.ok(pid > 0);
+
+  const cancelled = cancelGoal(db, goal.id, 'human-1');
+  assert.equal(cancelled.status, 'cancelled');
+
+  const result = await pending;
+  assert.notEqual(result.status, 'succeeded');
+
+  const terminated = listAuditEvents(db, goal.id).find((event) => event.type === 'agent.terminated');
+  assert.ok(terminated);
+  assert.equal((terminated.payload as { ok: boolean }).ok, true);
+  assert.ok(
+    listAuditEvents(db, goal.id).some(
+      (event) =>
+        event.type === 'builder.run_finished' &&
+        (event.payload as { runId?: string }).runId === runId,
+    ),
+  );
+
+  const cancelledEvent = listAuditEvents(db, goal.id).find((event) => event.type === 'goal.cancelled');
+  assert.equal((cancelledEvent?.payload as { terminatedAgents?: number }).terminatedAgents, 1);
 });

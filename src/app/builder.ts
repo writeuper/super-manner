@@ -342,6 +342,19 @@ export async function runBuilder(
     cwd: workspace.path,
     stdin: buildBuilderPrompt(goal, plan, item, role),
     timeoutMs,
+    onSpawn: (pid) => {
+      appendAudit(
+        db,
+        {
+          actor: input.actor ?? role.subject,
+          type: 'builder.run_spawned',
+          goalId: goal.id,
+          subject: role.subject,
+          payload: { runId, workItemId: item.id, pid },
+        },
+        new Date().toISOString(),
+      );
+    },
   });
 
   const selfChecks: SelfCheckResult[] = [];

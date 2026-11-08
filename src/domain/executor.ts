@@ -16,6 +16,8 @@ export interface ExecutorRequest {
   /** 写入子进程标准输入，便于传递长提示词，避免命令行长度限制。 */
   stdin?: string;
   timeoutMs?: number;
+  /** 子进程启动后回调 PID，便于取消目标时终止运行中的 Agent。 */
+  onSpawn?: (pid: number) => void;
 }
 
 export interface ExecutorResult {

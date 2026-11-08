@@ -20,6 +20,27 @@ export interface SubmitPlanInput {
   pendingDecisions?: string[];
 }
 
+function assertAcyclicDependencies(items: WorkItem[]): void {
+  const dependencies = new Map(items.map((item) => [item.id, item.dependsOn]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (id: string, path: string[]): void => {
+    if (visiting.has(id)) {
+      throw new Error(`工作项依赖存在循环：${[...path, id].join(' -> ')}`);
+    }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const dependency of dependencies.get(id) ?? []) {
+      visit(dependency, [...path, id]);
+    }
+    visiting.delete(id);
+    visited.add(id);
+  };
+
+  for (const item of items) visit(item.id, []);
+}
+
 function validatePlanInput(goal: Goal, input: SubmitPlanInput): void {
   if (goal.missing.length > 0) {
     throw new Error(`目标信息不完整，不能提交计划：${goal.missing.join('；')}`);
@@ -42,6 +63,7 @@ function validatePlanInput(goal: Goal, input: SubmitPlanInput): void {
       if (!ids.has(dependency)) throw new Error(`工作项 ${item.id} 依赖不存在的工作项：${dependency}`);
     }
   }
+  assertAcyclicDependencies(input.workItems);
   const sum = input.workItems.reduce((total, item) => total + item.budgetTokens, 0);
   if (sum > input.totalBudgetTokens) {
     throw new Error(`工作项预算合计 ${sum} 超过计划预算 ${input.totalBudgetTokens}`);

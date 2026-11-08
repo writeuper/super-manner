@@ -17,6 +17,7 @@ import {
   summarizeCheckpoints,
   type CheckpointSummary,
 } from './checkpoints.ts';
+import { terminateRunningAgents } from './processes.ts';
 
 export function validateGoal(input: CreateGoalInput): string[] {
   const missing: string[] = [];
@@ -117,6 +118,7 @@ export function cancelGoal(db: DatabaseSync, goalId: string, actor: string, now 
   }
 
   const activeWorkspaces = listWorkspaces(db, { goalId, status: 'active' }).length;
+  const terminated = terminateRunningAgents(db, goalId, actor, now);
   const updated: Goal = {
     ...goal,
     status: 'cancelled',
@@ -135,6 +137,8 @@ export function cancelGoal(db: DatabaseSync, goalId: string, actor: string, now 
         revokedGrants: revoked,
         expiredEscalations: expired,
         activeWorkspaces,
+        terminatedAgents: terminated.terminated,
+        terminatedPids: terminated.pids,
       },
     },
     at,

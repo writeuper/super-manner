@@ -63,6 +63,7 @@ export function createLocalExecutor(options: LocalExecutorOptions = {}): Executo
           env: { ...process.env, ...request.env },
           stdio: ['pipe', 'pipe', 'pipe'],
         });
+        if (child.pid !== undefined) request.onSpawn?.(child.pid);
 
         // 子进程可能不读取 stdin 就退出，忽略 EPIPE。
         child.stdin.on('error', () => {});

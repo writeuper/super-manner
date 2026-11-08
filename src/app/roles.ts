@@ -4,6 +4,7 @@ import type { AgentRole, PlaybookContent } from '../domain/playbook.ts';
 import type { Action, GrantScope } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
 import { listGrantsForGoal } from '../infra/store.ts';
+import { assertDependenciesComplete } from './dependencies.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { ROLE_PLAYBOOKS } from './playbook-defaults.ts';
 import { resolvePlaybook } from './playbooks.ts';
@@ -67,6 +68,8 @@ export function instantiateRole(
 
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
   if (!item) throw new Error(`工作项不存在于已批准计划：${input.workItemId}`);
+
+  assertDependenciesComplete(db, goal.id, item, plan.workItems);
 
   const grant = listGrantsForGoal(db, goal.id).find(
     (candidate) => candidate.workItemId === item.id && candidate.status === 'active',
