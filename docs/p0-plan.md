@@ -202,7 +202,7 @@ S3-06 → S4-05 → S4-06 → S4-07
 | 依赖只声明不调度 | 计划提交检测循环；角色装载、证据与判定前要求前置完成 | `dependencies.test.ts` |
 | CLI 入口无测试 | 新增 CLI 级旅程测试，直接执行 `verify start` | `cli.test.ts` |
 
-本轮改动后 `pnpm test` 为 148 项全部通过；真实 GitHub 链路已用脚本 Agent 跑通，真实模型执行仍待补。
+本轮改动后 `pnpm test` 在 Windows 为 148 项全部通过；Linux CI 会跳过 1 项 Windows 批处理用例。真实 GitHub 链路已用脚本 Agent 跑通，真实模型执行仍待补。
 
 ## 13. 剩余实现顺序
 
