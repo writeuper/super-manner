@@ -6,13 +6,14 @@ import { decideAcceptance } from '../src/app/acceptance.ts';
 import { runBuilder } from '../src/app/builder.ts';
 import { computeCompletion } from '../src/app/completion.ts';
 import { collectEvidence, getLatestEvidence } from '../src/app/evidence.ts';
-import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
+import { getGoalOrThrow } from '../src/app/goals.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { getLatestVerdicts, recordVerdicts, type VerdictRecord } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { listGrantsForGoal } from '../src/infra/store.ts';
-import { builderItem, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
+import { builderItem, commitAndPush, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
 
 const tempRoots: string[] = [];
 
@@ -104,12 +105,14 @@ test('一次不通过后返工并通过，历史证据不被覆盖', async () =>
     'planner',
   );
   approvePlan(db, plan.id, 'architect');
-  const repo = createTestRepo();
+  const repo = createTestRepo({ bareRemote: true });
   tempRoots.push(repo.root);
   const worktreeRoot = join(repo.root, 'worktrees');
 
   // 第一轮：实现完成，但有标准不通过 / 无法判定。
   await build(db, goal.id, repo.repoDir, worktreeRoot, 'export const login = true;\n');
+  commitAndPush(db, goal.id);
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
   const firstEvidence = await collect(db, goal.id);
   judge(db, goal.id, {
     错误密码时展示提示文案: 'failed',
@@ -120,7 +123,6 @@ test('一次不通过后返工并通过，历史证据不被覆盖', async () =>
   assert.equal(blocked.goal.complete, false);
   assert.match(blocked.goal.reasons.join('\n'), /未完成/);
 
-  setGoalStatus(db, getGoalOrThrow(db, goal.id), 'verifying', 'verifier-1');
   const rework = decideAcceptance(db, {
     goalId: goal.id,
     decision: 'rework',
@@ -132,13 +134,14 @@ test('一次不通过后返工并通过，历史证据不被覆盖', async () =>
 
   // 第二轮：返工后重新实现、重新采集证据并全部判定通过。
   await build(db, goal.id, repo.repoDir, worktreeRoot, 'export const login = false;\n');
+  commitAndPush(db, goal.id);
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
   const secondEvidence = await collect(db, goal.id);
   judge(db, goal.id, {});
 
   const complete = computeCompletion(db, goal.id);
   assert.equal(complete.goal.complete, true, complete.goal.reasons.join('；'));
 
-  setGoalStatus(db, getGoalOrThrow(db, goal.id), 'verifying', 'verifier-1');
   const accepted = decideAcceptance(db, { goalId: goal.id, decision: 'accept', actor: 'human-1' });
   assert.equal(accepted.goalStatus, 'completed');
   assert.equal(accepted.complete, true);

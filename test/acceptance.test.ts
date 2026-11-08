@@ -5,13 +5,14 @@ import { after, test } from 'node:test';
 import { decideAcceptance } from '../src/app/acceptance.ts';
 import { runBuilder } from '../src/app/builder.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
-import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
+import { getGoalOrThrow } from '../src/app/goals.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { listGrantsForGoal } from '../src/infra/store.ts';
-import { builderItem, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
+import { builderItem, commitAndPush, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
 
 const tempRoots: string[] = [];
 
@@ -54,7 +55,7 @@ function singleItemPlan(): { db: ReturnType<typeof createTestDb>; goalId: string
 }
 
 async function verifiedBuild(db: ReturnType<typeof createTestDb>, goalId: string, pass = true): Promise<void> {
-  const repo = createTestRepo();
+  const repo = createTestRepo({ bareRemote: true });
   tempRoots.push(repo.root);
   await runBuilder(db, {
     goalId,
@@ -70,6 +71,8 @@ async function verifiedBuild(db: ReturnType<typeof createTestDb>, goalId: string
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
+  commitAndPush(db, goalId);
+  startVerification(db, { goalId, actor: 'verifier-1' });
   await collectEvidence(db, {
     goalId,
     workItemId: 'build',
@@ -93,7 +96,6 @@ test('接受后目标完成、授权全部失效且不能再操作', async () =>
   const before = listGrantsForGoal(db, goalId);
   assert.ok(before.length > 0);
   assert.ok(before.every((grant) => grant.status === 'active'));
-  setGoalStatus(db, getGoalOrThrow(db, goalId), 'verifying', 'verifier-1');
 
   const record = decideAcceptance(db, { goalId, decision: 'accept', actor: 'human-1' });
 
@@ -116,7 +118,6 @@ test('接受后目标完成、授权全部失效且不能再操作', async () =>
 test('完成判定未通过时不能接受', async () => {
   const { db, goalId } = singleItemPlan();
   await verifiedBuild(db, goalId, false);
-  setGoalStatus(db, getGoalOrThrow(db, goalId), 'verifying', 'verifier-1');
 
   assert.throws(
     () => decideAcceptance(db, { goalId, decision: 'accept', actor: 'human-1' }),
@@ -128,7 +129,6 @@ test('完成判定未通过时不能接受', async () => {
 test('返工回到执行态，历史结论保留并可产生新 Run', async () => {
   const { db, goalId } = singleItemPlan();
   await verifiedBuild(db, goalId, false);
-  setGoalStatus(db, getGoalOrThrow(db, goalId), 'verifying', 'verifier-1');
 
   assert.throws(
     () => decideAcceptance(db, { goalId, decision: 'rework', actor: 'human-1' }),
@@ -171,7 +171,6 @@ test('返工回到执行态，历史结论保留并可产生新 Run', async () =
 test('关闭目标会取消并吊销授权', async () => {
   const { db, goalId } = singleItemPlan();
   await verifiedBuild(db, goalId);
-  setGoalStatus(db, getGoalOrThrow(db, goalId), 'verifying', 'verifier-1');
 
   const record = decideAcceptance(db, {
     goalId,

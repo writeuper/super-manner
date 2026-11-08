@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { appendAudit, listAuditEvents } from '../infra/audit.ts';
 import { getLatestEvidence } from './evidence.ts';
-import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
 import { classifyVerdicts, type FailureKind } from './retries.ts';
+import { assertGoalVerifying } from './verification.ts';
 
 export type VerdictResult = 'passed' | 'failed' | 'undetermined';
 
@@ -36,6 +36,8 @@ export interface VerdictRecord {
   goalId: string;
   workItemId: string;
   recordedAt: string;
+  /** 判定所依据的证据对应的提交；没有证据时为空。 */
+  evaluatedHead?: string;
   verdicts: Verdict[];
   summary: {
     total: number;
@@ -75,7 +77,7 @@ export function recordVerdicts(
   input: RecordVerdictsInput,
   now = new Date(),
 ): VerdictRecord {
-  const goal = getGoalOrThrow(db, input.goalId);
+  const goal = assertGoalVerifying(db, input.goalId, '记录判定');
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能记录判定');
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);
@@ -84,7 +86,8 @@ export function recordVerdicts(
   const criteria = [...new Set([...goal.acceptance, ...item.dod])];
   const known = new Set(criteria);
   const seen = new Set<string>();
-  const evidence = getLatestEvidence(db, goal.id, item.id)?.evidence ?? [];
+  const latestEvidence = getLatestEvidence(db, goal.id, item.id);
+  const evidence = latestEvidence?.evidence ?? [];
   const evidenceKeys = new Set(evidence.flatMap((record) => [record.id, record.hash]));
 
   for (const verdict of input.verdicts) {
@@ -126,6 +129,7 @@ export function recordVerdicts(
     goalId: goal.id,
     workItemId: item.id,
     recordedAt,
+    ...(latestEvidence ? { evaluatedHead: latestEvidence.head } : {}),
     verdicts,
     summary: summarize(verdicts),
     ...(failureKind ? { failureKind } : {}),

@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
+import { commitWorkspace } from '../src/app/delivery.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
 import { getLatestVerdicts, recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { createTestRepo, setupApproved } from './helpers.ts';
@@ -65,6 +67,8 @@ async function withWorkspaceEvidence(): Promise<{
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
+  assert.equal(commitWorkspace(db, { goalId: goal.id, workItemId: 'build' }).status, 'committed');
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
 
   const collection = await collectEvidence(db, {
     goalId: goal.id,

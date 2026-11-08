@@ -124,10 +124,22 @@ export function buildAcceptanceView(
       const reasons = completion && completion.reasons.length > 0
         ? `<p class="warn">未完成原因：${escapeHtml(completion.reasons.join('；'))}</p>`
         : '<p class="ok">工作项完成判定通过</p>';
+      const binding = [
+        completion?.deliveryHead
+          ? `交付提交 <code>${escapeHtml(completion.deliveryHead)}</code>`
+          : '<span class="warn">未推送交付</span>',
+        completion?.evidenceHead
+          ? `证据提交 <code>${escapeHtml(completion.evidenceHead)}</code>`
+          : '<span class="warn">无证据提交</span>',
+        completion?.evaluatedHead
+          ? `判定提交 <code>${escapeHtml(completion.evaluatedHead)}</code>`
+          : '<span class="warn">判定未绑定提交</span>',
+      ].join(' · ');
 
       return `<section>
         <h2>工作项 ${escapeHtml(item.id)} · ${escapeHtml(item.title)}</h2>
         <p>角色 <code>${escapeHtml(item.role)}</code> · 预算 ${item.budgetTokens} tokens</p>
+        <p class="muted">${binding}</p>
         ${reasons}
         <h3>完成标准</h3>
         ${list(item.dod)}

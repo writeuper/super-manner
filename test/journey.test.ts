@@ -9,11 +9,12 @@ import { getGoalCheckpoints } from '../src/app/checkpoints.ts';
 import { computeCompletion } from '../src/app/completion.ts';
 import { commitWorkspace, pushWorkspace } from '../src/app/delivery.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
-import { getGoalOrThrow, pauseGoal, resumeGoal, setGoalStatus } from '../src/app/goals.ts';
+import { getGoalOrThrow, pauseGoal, resumeGoal } from '../src/app/goals.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { buildReview, generateReview } from '../src/app/review.ts';
 import { runBuilder } from '../src/app/builder.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents, verifyAuditChain } from '../src/infra/audit.ts';
 import { listGrantsForGoal } from '../src/infra/store.ts';
@@ -103,6 +104,8 @@ test('P0 完整旅程：计划、暂停恢复、实现、推送、验证、验�
     ['builder_run', 'commit', 'push'],
   );
 
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+
   await collectEvidence(db, {
     goalId: goal.id,
     workItemId: 'build',
@@ -125,7 +128,6 @@ test('P0 完整旅程：计划、暂停恢复、实现、推送、验证、验�
   assert.match(view.html, /错误密码时展示提示文案/);
   assert.match(view.html, /src\/login\.ts/);
 
-  setGoalStatus(db, getGoalOrThrow(db, goal.id), 'verifying', 'verifier-1');
   const accepted = decideAcceptance(db, {
     goalId: goal.id,
     decision: 'accept',

@@ -1,9 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { Checkpoint } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
+import { getLatestCheckpoint } from './checkpoints.ts';
 import { getLatestEvidence } from './evidence.ts';
 import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
 import { getLatestVerdicts } from './verdicts.ts';
+import { assertGoalVerifying } from './verification.ts';
 
 export interface WorkItemCompletion {
   workItemId: string;
@@ -14,6 +17,9 @@ export interface WorkItemCompletion {
   undetermined: number;
   verdictsRecordedAt?: string;
   evidenceCollectedAt?: string;
+  evidenceHead?: string;
+  evaluatedHead?: string;
+  deliveryHead?: string;
   complete: boolean;
   reasons: string[];
 }
@@ -31,6 +37,11 @@ export interface CompletionAssessment {
 export interface AssessCompletionInput {
   goalId: string;
   actor?: string;
+}
+
+function checkpointSha(checkpoint: Checkpoint | undefined): string | undefined {
+  const sha = (checkpoint?.payload as { sha?: unknown } | null)?.sha;
+  return typeof sha === 'string' && sha.length > 0 ? sha : undefined;
 }
 
 /**
@@ -51,6 +62,10 @@ export function computeCompletion(
   const workItems: WorkItemCompletion[] = plan.workItems.map((item) => {
     const verdicts = getLatestVerdicts(db, goal.id, item.id);
     const evidence = getLatestEvidence(db, goal.id, item.id);
+    const commit = getLatestCheckpoint(db, goal.id, item.id, 'commit');
+    const push = getLatestCheckpoint(db, goal.id, item.id, 'push');
+    const commitHead = checkpointSha(commit);
+    const pushHead = checkpointSha(push);
     const reasons: string[] = [];
 
     if (!verdicts) {
@@ -62,6 +77,38 @@ export function computeCompletion(
       }
     }
     if (!evidence) reasons.push('没有可复用的证据');
+
+    if (verdicts && evidence) {
+      if (!verdicts.evaluatedHead) {
+        reasons.push('逐条判定未绑定证据提交');
+      } else if (verdicts.evaluatedHead !== evidence.head) {
+        reasons.push('逐条判定对应的提交与最新证据不一致');
+      }
+    }
+
+    if (evidence && commitHead && evidence.head !== commitHead) {
+      reasons.push(
+        `证据对应提交与最新提交不一致（证据 ${evidence.head.slice(0, 8)}，提交 ${commitHead.slice(0, 8)}）`,
+      );
+    }
+
+    if (item.role === 'builder') {
+      if (!commitHead) {
+        reasons.push('没有提交检查点');
+      } else if (!push) {
+        reasons.push('没有成功推送的交付提交');
+      } else if (!pushHead) {
+        reasons.push('推送检查点缺少提交 SHA');
+      } else if (pushHead !== commitHead) {
+        reasons.push(
+          `最新提交尚未推送（提交 ${commitHead.slice(0, 8)}，已推送 ${pushHead.slice(0, 8)}）`,
+        );
+      }
+    } else if (pushHead && commitHead && pushHead !== commitHead) {
+      reasons.push(
+        `最新提交尚未推送（提交 ${commitHead.slice(0, 8)}，已推送 ${pushHead.slice(0, 8)}）`,
+      );
+    }
 
     const result: WorkItemCompletion = {
       workItemId: item.id,
@@ -75,6 +122,10 @@ export function computeCompletion(
     };
     if (verdicts) result.verdictsRecordedAt = verdicts.recordedAt;
     if (evidence) result.evidenceCollectedAt = evidence.collectedAt;
+    if (evidence) result.evidenceHead = evidence.head;
+    if (verdicts?.evaluatedHead) result.evaluatedHead = verdicts.evaluatedHead;
+    if (commitHead) result.deliveryHead = commitHead;
+    else if (pushHead) result.deliveryHead = pushHead;
     return result;
   });
 
@@ -96,6 +147,7 @@ export function assessCompletion(
   input: AssessCompletionInput,
   now = new Date(),
 ): CompletionAssessment {
+  assertGoalVerifying(db, input.goalId, '做完成判定');
   const assessment = computeCompletion(db, input.goalId, now);
   appendAudit(
     db,

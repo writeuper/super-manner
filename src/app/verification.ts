@@ -4,11 +4,92 @@ import type { Goal, WorkItem } from '../domain/types.ts';
 import { appendAudit } from '../infra/audit.ts';
 import { listChangedFiles, refExists, runGit } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
-import { getGoalOrThrow } from './goals.ts';
+import { getGoalCheckpoints } from './checkpoints.ts';
+import { getGoalOrThrow, setGoalStatus } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
 
 /** 差异过长时截断，避免验证提示词失控；截断会显式标注。 */
 export const MAX_DIFF_CHARS = 20000;
+
+export interface StartVerificationInput {
+  goalId: string;
+  actor?: string;
+}
+
+export interface VerificationStart {
+  goalId: string;
+  status: 'verifying';
+  startedAt: string;
+  workItems: string[];
+}
+
+/** 验证动作的阶段守卫：只有目标进入验证态后才允许采集证据、判定与构建上下文。 */
+export function assertGoalVerifying(db: DatabaseSync, goalId: string, operation: string): Goal {
+  const goal = getGoalOrThrow(db, goalId);
+  if (goal.status !== 'verifying') {
+    throw new Error(`目标当前状态不能${operation}：${goal.status}`);
+  }
+  return goal;
+}
+
+/**
+ * 从执行态进入验证态。
+ *
+ * 进入前要求每个 builder 工作项都已有活跃工作区与提交检查点，
+ * 避免在实现尚未落地时就开始采集证据。
+ */
+export function startVerification(
+  db: DatabaseSync,
+  input: StartVerificationInput,
+  now = new Date(),
+): VerificationStart {
+  const goal = getGoalOrThrow(db, input.goalId);
+  if (goal.status !== 'executing') {
+    throw new Error(`目标当前状态不能进入验证：${goal.status}`);
+  }
+
+  const plan = getApprovedPlan(db, goal.id);
+  if (!plan) throw new Error('目标没有已批准的计划，不能进入验证');
+
+  const checkpoints = getGoalCheckpoints(db, goal.id);
+  const missing: string[] = [];
+  for (const item of plan.workItems) {
+    if (item.role !== 'builder') continue;
+    if (!findActiveWorkspace(db, goal.id, item.id)) {
+      missing.push(`工作项 ${item.id} 没有活跃工作区`);
+    }
+    if (!checkpoints.some((checkpoint) => checkpoint.workItemId === item.id && checkpoint.kind === 'commit')) {
+      missing.push(`工作项 ${item.id} 没有提交检查点`);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`不能进入验证：${missing.join('；')}`);
+  }
+
+  const at = now.toISOString();
+  const actor = input.actor ?? 'verifier';
+  const updated = setGoalStatus(db, goal, 'verifying', actor, now);
+  appendAudit(
+    db,
+    {
+      actor,
+      type: 'verification.started',
+      goalId: goal.id,
+      payload: {
+        from: goal.status,
+        workItems: plan.workItems.map((item) => item.id),
+      },
+    },
+    at,
+  );
+
+  return {
+    goalId: updated.id,
+    status: 'verifying',
+    startedAt: at,
+    workItems: plan.workItems.map((item) => item.id),
+  };
+}
 
 export interface BuildVerifierContextInput {
   goalId: string;
@@ -154,11 +235,11 @@ export function buildVerifierContext(
   input: BuildVerifierContextInput,
   now = new Date(),
 ): VerifierContext {
+  const goal = assertGoalVerifying(db, input.goalId, '构建验证上下文');
   const change = collectVerifierChange(db, {
     goalId: input.goalId,
     workItemId: input.workItemId,
   });
-  const goal = getGoalOrThrow(db, change.goalId);
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能构建验证上下文');
   const item = plan.workItems.find((candidate) => candidate.id === change.workItemId);

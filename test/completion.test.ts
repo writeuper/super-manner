@@ -2,15 +2,20 @@ import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+import { decideAcceptance } from '../src/app/acceptance.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { runBuilder } from '../src/app/builder.ts';
 import { assessCompletion } from '../src/app/completion.ts';
+import { commitWorkspace } from '../src/app/delivery.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
+import { findActiveWorkspace } from '../src/infra/store.ts';
 import {
   builderItem,
+  commitAndPush,
   createTestGoal,
   createTestDb,
   createTestRepo,
@@ -59,9 +64,13 @@ function singleItemPlan(): { db: ReturnType<typeof createTestDb>; goalId: string
 }
 
 /** 跑通 Builder、采集证据并写入一份全部通过的逐条判定。 */
-async function verifiedBuild(db: ReturnType<typeof createTestDb>, goalId: string): Promise<void> {
-  const repo = createTestRepo();
+async function verifiedBuild(
+  db: ReturnType<typeof createTestDb>,
+  goalId: string,
+): Promise<{ repoDir: string; worktreeRoot: string }> {
+  const repo = createTestRepo({ bareRemote: true });
   tempRoots.push(repo.root);
+  const worktreeRoot = join(repo.root, 'worktrees');
 
   await runBuilder(db, {
     goalId,
@@ -73,10 +82,13 @@ async function verifiedBuild(db: ReturnType<typeof createTestDb>, goalId: string
       return {};
     }),
     repoDir: repo.repoDir,
-    worktreeRoot: join(repo.root, 'worktrees'),
+    worktreeRoot,
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
+
+  commitAndPush(db, goalId);
+  startVerification(db, { goalId, actor: 'verifier-1' });
 
   await collectEvidence(db, {
     goalId,
@@ -94,6 +106,8 @@ async function verifiedBuild(db: ReturnType<typeof createTestDb>, goalId: string
       note: '按验收标准复核通过',
     })),
   });
+
+  return { repoDir: repo.repoDir, worktreeRoot };
 }
 
 test('证据与逐条判定齐备时才判定完成', async () => {
@@ -173,4 +187,57 @@ test('任一工作项缺证据或缺判定时目标不得完成', async () => {
   assert.deepEqual(verifyItem.reasons, ['没有逐条判定', '没有可复用的证据']);
   assert.equal(assessment.goal.complete, false);
   assert.match(assessment.goal.reasons[0] ?? '', /工作项 verify 未完成/);
+});
+
+test('证据之后出现新提交时不得完成', async () => {
+  const { db, goalId } = singleItemPlan();
+  await verifiedBuild(db, goalId);
+
+  const workspace = findActiveWorkspace(db, goalId, 'build');
+  assert.ok(workspace);
+  writeFileSync(join(workspace.path, 'src', 'login.ts'), 'export const login = false;\n');
+  assert.equal(
+    commitWorkspace(db, { goalId, workItemId: 'build', message: 'fix: follow-up' }).status,
+    'committed',
+  );
+
+  const assessment = assessCompletion(db, { goalId });
+  assert.equal(assessment.goal.complete, false);
+  const reasons = assessment.goal.reasons.join('；');
+  assert.match(reasons, /证据对应提交与最新提交不一致/);
+  assert.match(reasons, /最新提交尚未推送/);
+});
+
+test('返工后未重新采集证据不得完成', async () => {
+  const { db, goalId } = singleItemPlan();
+  const { repoDir, worktreeRoot } = await verifiedBuild(db, goalId);
+
+  const rework = decideAcceptance(db, {
+    goalId,
+    decision: 'rework',
+    reason: '再改一版',
+    actor: 'human-1',
+  });
+  assert.equal(rework.goalStatus, 'executing');
+
+  await runBuilder(db, {
+    goalId,
+    workItemId: 'build',
+    executor: new FakeExecutor((request) => {
+      if (request.command === 'fake-agent') {
+        writeFileSync(join(request.cwd as string, 'src', 'login.ts'), 'export const login = false;\n');
+      }
+      return {};
+    }),
+    repoDir,
+    worktreeRoot,
+    agent: { command: 'fake-agent' },
+    selfChecks: [],
+  });
+  commitAndPush(db, goalId);
+  startVerification(db, { goalId, actor: 'verifier-1' });
+
+  const assessment = assessCompletion(db, { goalId });
+  assert.equal(assessment.goal.complete, false);
+  assert.match(assessment.goal.reasons.join('；'), /证据对应提交与最新提交不一致/);
 });

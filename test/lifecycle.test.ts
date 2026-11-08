@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { getGoalCheckpoints } from '../src/app/checkpoints.ts';
-import { getBudgetStatus } from '../src/app/budget.ts';
+import { extendBudget, getBudgetStatus } from '../src/app/budget.ts';
 import { commitWorkspace, pushWorkspace } from '../src/app/delivery.ts';
 import {
   cancelGoal,
@@ -15,6 +15,7 @@ import {
 import { runBuilder } from '../src/app/builder.ts';
 import { requestAction } from '../src/app/gateway.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { listEscalations, listGrantsForGoal } from '../src/infra/store.ts';
@@ -161,6 +162,9 @@ test('出现不通过判定后，恢复不会跳过重试', async () => {
   const first = await runBuilder(db, input);
   assert.equal(first.status, 'succeeded');
 
+  commitWorkspace(db, { goalId: goal.id, workItemId: 'build' });
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+
   const criteria = [...defaultGoal().acceptance, ...builderItem().dod];
   recordVerdicts(db, {
     goalId: goal.id,
@@ -274,7 +278,12 @@ test('Builder 记录 token 用量，耗尽时暂停升级但不压缩验证', as
   assert.equal(pending.length, 1);
   assert.equal(pending[0]?.action, 'spend.tokens');
 
-  // 预算耗尽不跳过验证：逐条判定仍可正常记录。
+  // 追加预算并恢复后，验证仍可正常记录，不因预算耗尽被跳过。
+  extendBudget(db, goal.id, 1000, 'human-1');
+  resumeGoal(db, goal.id, 'human-1', '预算已追加');
+  commitWorkspace(db, { goalId: goal.id, workItemId: 'build' });
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
+
   const criteria = [...defaultGoal().acceptance, ...builderItem().dod];
   const verdicts = recordVerdicts(db, {
     goalId: goal.id,

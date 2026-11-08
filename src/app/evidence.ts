@@ -6,8 +6,8 @@ import { runGit } from '../infra/git.ts';
 import { findActiveWorkspace } from '../infra/store.ts';
 import { tailText } from '../infra/text.ts';
 import { detectSelfChecks, DEFAULT_SELF_CHECK_TIMEOUT_MS, type SelfCheckSpec } from './builder.ts';
-import { getGoalOrThrow } from './goals.ts';
 import { getApprovedPlan } from './plans.ts';
+import { assertGoalVerifying } from './verification.ts';
 
 export interface CollectEvidenceInput {
   goalId: string;
@@ -72,7 +72,7 @@ export async function collectEvidence(
   input: CollectEvidenceInput,
   now = new Date(),
 ): Promise<EvidenceCollection> {
-  const goal = getGoalOrThrow(db, input.goalId);
+  const goal = assertGoalVerifying(db, input.goalId, '采集证据');
   const plan = getApprovedPlan(db, goal.id);
   if (!plan) throw new Error('目标没有已批准的计划，不能采集证据');
   const item = plan.workItems.find((candidate) => candidate.id === input.workItemId);

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { commitWorkspace, pushWorkspace } from '../src/app/delivery.ts';
 import { approvePlan, submitPlan, type SubmitPlanInput } from '../src/app/plans.ts';
 import { createGoal } from '../src/app/goals.ts';
 import type { CreateGoalInput, Goal, Plan, WorkItem } from '../src/domain/types.ts';
@@ -112,6 +113,25 @@ export function defaultPlan(overrides: Partial<SubmitPlanInput> = {}): SubmitPla
 
 export function submitDefaultPlan(db: DatabaseSync, goalId: string): Plan {
   return submitPlan(db, goalId, defaultPlan(), 'planner');
+}
+
+/** 测试用：提交工作项改动，返回提交 SHA。 */
+export function commitBuild(db: DatabaseSync, goalId: string, workItemId = 'build'): string {
+  const committed = commitWorkspace(db, { goalId, workItemId });
+  if (committed.status !== 'committed' || !committed.sha) {
+    throw new Error(`测试提交失败：${committed.status} ${committed.reason ?? ''}`);
+  }
+  return committed.sha;
+}
+
+/** 测试用：提交并推送到仓库的 origin（需要 bareRemote）。 */
+export function commitAndPush(db: DatabaseSync, goalId: string, workItemId = 'build'): string {
+  const sha = commitBuild(db, goalId, workItemId);
+  const pushed = pushWorkspace(db, { goalId, workItemId });
+  if (pushed.status !== 'pushed') {
+    throw new Error(`测试推送失败：${pushed.status} ${pushed.reason ?? ''}`);
+  }
+  return sha;
 }
 
 export function setupApproved(overrides: Partial<CreateGoalInput> = {}): {

@@ -81,6 +81,21 @@ export function getGoalCheckpoints(db: DatabaseSync, goalId: string): Checkpoint
   return listCheckpointsForGoal(db, goalId);
 }
 
+/** 取工作项最近一次指定类型的检查点，用于交付提交绑定。 */
+export function getLatestCheckpoint(
+  db: DatabaseSync,
+  goalId: string,
+  workItemId: string,
+  kind: CheckpointKind,
+): Checkpoint | undefined {
+  const checkpoints = listCheckpointsForItem(db, goalId, workItemId);
+  for (let index = checkpoints.length - 1; index >= 0; index -= 1) {
+    const checkpoint = checkpoints[index];
+    if (checkpoint?.kind === kind) return checkpoint;
+  }
+  return undefined;
+}
+
 export interface RepeatWriteAssessment {
   skip: boolean;
   checkpoint?: Checkpoint;

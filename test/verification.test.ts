@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
 import { commitWorkspace } from '../src/app/delivery.ts';
-import { buildVerifierContext } from '../src/app/verification.ts';
+import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
+import { buildVerifierContext, startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { setupApproved, createTestRepo } from './helpers.ts';
@@ -67,6 +68,7 @@ test('验证上下文只含目标、标准与差异，不含实现过程', async
     selfChecks: [],
   });
   assert.equal(commitWorkspace(db, { goalId: goal.id, workItemId: 'build' }).status, 'committed');
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
 
   const context = buildVerifierContext(db, { goalId: goal.id, workItemId: 'build' });
 
@@ -91,6 +93,7 @@ test('验证上下文只含目标、标准与差异，不含实现过程', async
 
 test('没有活跃工作区时不能构建验证上下文', () => {
   const { db, goal } = setupApproved();
+  setGoalStatus(db, getGoalOrThrow(db, goal.id), 'verifying', 'verifier-1');
   assert.throws(
     () => buildVerifierContext(db, { goalId: goal.id, workItemId: 'build' }),
     /没有活跃工作区/,

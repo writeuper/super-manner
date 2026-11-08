@@ -49,6 +49,8 @@ export interface PushWorkspaceResult {
   workspaceId: string;
   branch: string;
   remote: string;
+  /** 成功推送时对应的本地提交 SHA，用于证据与交付绑定。 */
+  sha?: string;
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -283,6 +285,7 @@ export function pushWorkspace(
   const status: PushStatus = result.status === 0 ? 'pushed' : 'failed';
   const stdout = tailText(result.stdout.trim());
   const stderr = tailText(result.stderr.trim());
+  const sha = runGit(['rev-parse', 'HEAD'], { cwd: context.workspacePath }).stdout.trim();
 
   appendAudit(
     db,
@@ -296,6 +299,7 @@ export function pushWorkspace(
         branch: context.branch,
         remote,
         status,
+        sha,
         exitCode: result.status,
         stdout,
         stderr,
@@ -309,7 +313,7 @@ export function pushWorkspace(
       goalId: context.goal.id,
       workItemId: context.item.id,
       kind: 'push',
-      payload: { remote, branch: context.branch },
+      payload: { remote, branch: context.branch, sha },
     });
   }
 
@@ -321,6 +325,7 @@ export function pushWorkspace(
     workspaceId: context.workspaceId,
     branch: context.branch,
     remote,
+    ...(status === 'pushed' && sha ? { sha } : {}),
     exitCode: result.status,
     stdout,
     stderr,

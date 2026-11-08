@@ -12,7 +12,7 @@ import { runBuilder, type BuilderRunResult } from './app/builder.ts';
 import { commitWorkspace, pushWorkspace } from './app/delivery.ts';
 import { createPullRequest } from './app/pull-requests.ts';
 import { resetBuilderRetry } from './app/retries.ts';
-import { buildVerifierContext } from './app/verification.ts';
+import { buildVerifierContext, startVerification } from './app/verification.ts';
 import { collectEvidence } from './app/evidence.ts';
 import { recordVerdicts, type VerdictInput } from './app/verdicts.ts';
 import { assessCompletion } from './app/completion.ts';
@@ -186,6 +186,7 @@ const USAGE = `Super-Manner CLI
   manner builder pr --goal <id> --item <workItemId> [--title <text>] [--body <text>]
                      [--base <branch>] [--remote origin] [--by <id>]
   manner builder reset --goal <id> --item <workItemId> [--reason <text>] [--by <id>]
+  manner verify start --goal <id> [--by <id>]
   manner verify context --goal <id> --item <workItemId> [--by <id>]
   manner verify evidence --goal <id> --item <workItemId> [--by <id>]
   manner verify judge --goal <id> --item <workItemId> --file verdicts.json [--by <id>]
@@ -436,6 +437,15 @@ async function main(): Promise<void> {
       }
 
       case 'verify': {
+        if (subcommand === 'start') {
+          print(
+            startVerification(db, {
+              goalId: required(args, 'goal'),
+              actor: one(args, 'by'),
+            }),
+          );
+          return;
+        }
         if (subcommand === 'context') {
           print(
             buildVerifierContext(db, {

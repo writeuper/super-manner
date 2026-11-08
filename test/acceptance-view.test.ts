@@ -7,9 +7,10 @@ import { runBuilder } from '../src/app/builder.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
 import { approvePlan, submitPlan } from '../src/app/plans.ts';
 import { recordVerdicts } from '../src/app/verdicts.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
-import { builderItem, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
+import { builderItem, commitAndPush, createTestDb, createTestGoal, createTestRepo } from './helpers.ts';
 
 const tempRoots: string[] = [];
 
@@ -61,7 +62,7 @@ function singleItemPlan(): { db: ReturnType<typeof createTestDb>; goalId: string
 }
 
 async function buildWithFakeAgent(db: ReturnType<typeof createTestDb>, goalId: string): Promise<void> {
-  const repo = createTestRepo();
+  const repo = createTestRepo({ bareRemote: true });
   tempRoots.push(repo.root);
   await runBuilder(db, {
     goalId,
@@ -77,6 +78,8 @@ async function buildWithFakeAgent(db: ReturnType<typeof createTestDb>, goalId: s
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
+  commitAndPush(db, goalId);
+  startVerification(db, { goalId, actor: 'verifier-1' });
 }
 
 test('验收视图汇总目标、差异、证据、风险与待决，并标注可验收', async () => {

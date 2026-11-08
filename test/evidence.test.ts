@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
+import { commitWorkspace } from '../src/app/delivery.ts';
 import { collectEvidence } from '../src/app/evidence.ts';
+import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
+import { startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
 import { createTestRepo, setupApproved } from './helpers.ts';
@@ -61,6 +64,8 @@ test('证据记录命令、环境、时间与哈希，他人可据此重跑', as
     agent: { command: 'fake-agent' },
     selfChecks: [],
   });
+  assert.equal(commitWorkspace(db, { goalId: goal.id, workItemId: 'build' }).status, 'committed');
+  startVerification(db, { goalId: goal.id, actor: 'verifier-1' });
 
   const executor = new FakeExecutor((request) =>
     request.command === 'fake-verify'
@@ -134,6 +139,7 @@ test('证据记录命令、环境、时间与哈希，他人可据此重跑', as
 
 test('没有活跃工作区时不能采集证据', async () => {
   const { db, goal } = setupApproved();
+  setGoalStatus(db, getGoalOrThrow(db, goal.id), 'verifying', 'verifier-1');
   await assert.rejects(
     () =>
       collectEvidence(db, {
