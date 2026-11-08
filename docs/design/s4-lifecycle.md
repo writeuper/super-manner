@@ -76,16 +76,18 @@ manner checkpoint list --goal <goalId>
 | 目标 | 状态置为 `cancelled`，清空 `pausedFrom` | 暂停中的目标也可取消，之后不能恢复 |
 | 授权 | 吊销该目标全部授权 | 任何动作都先因目标状态或授权失效被拒绝 |
 | 升级 | 该目标所有待决升级置为 `expired` | 不会在取消后被人误批 |
-| 运行 | 角色实例化与网关都拒绝 `cancelled` | Builder、commit、push 都不会再产生副作用 |
+| 运行 | 已启动且未结束的 Agent 按 PID 终止（Windows `taskkill /T /F`，其他平台 SIGTERM）；角色实例化与网关都拒绝 `cancelled` | 不再产生新的副作用，残留进程被清理 |
 
 工作区不随取消删除：其中的改动与证据仍可供复盘使用，但所有写入口都已关闭。
-审计 `goal.cancelled` 记录取消前状态、吊销授权数、过期升级数与活跃工作区数。
+审计 `goal.cancelled` 记录取消前状态、吊销授权数、过期升级数、活跃工作区数与终止的 Agent 数量；
+每个被终止的进程另记一条 `agent.terminated`。
 
 ### 3.1 测试映射
 
 | 用例 | 验证点 |
 | --- | --- |
 | 取消目标会级联停止授权、升级与后续运行 | 授权全吊销、升级过期、`pausedFrom` 清空、Builder/commit/push 均被拒绝且 Agent 未被调用 |
+| 取消目标会终止已启动的 Agent 进程 | 运行中的子进程被终止，`agent.terminated` 与 `goal.cancelled.terminatedAgents` 均写入审计 |
 
 ## 4. S4-03 预算计量
 
@@ -256,7 +258,8 @@ manner budget extend --goal <goalId> --tokens <n> --by <id>
 | 暂停与恢复 | 状态 `executing → paused → executing` |
 | Builder 实现与自检 | 运行成功，改动为 `src/login.ts` |
 | 提交并推送 | commit / push 成功，检查点依次为 `builder_run`、`commit`、`push` |
-| 采集证据并逐条判定 | 验收标准与 DoD 全部通过 |
+| 进入验证态 | `verify start` 校验活跃工作区与提交检查点，状态 `executing → verifying` |
+| 采集证据并逐条判定 | 验收标准与 DoD 全部通过，判定绑定证据提交 |
 | 完成判定与验收视图 | 目标 `complete=true`，视图含标准与差异 |
 | 人工接受 | 目标 completed，全部 Grant 吊销 |
 | 生成复盘 | 预算 120/2000、无失败、暂停记为偏差、接受记为介入 |

@@ -101,15 +101,18 @@ manner verify judge --goal <goalId> --item build --file verdicts.json --by verif
 
 | 级别 | 完成条件 |
 | --- | --- |
-| 工作项 | 有最近一次证据采集；有逐条判定；没有"不通过"或"无法判定" |
+| 工作项 | 有最近一次证据采集；有逐条判定且没有"不通过"或"无法判定"；判定的 `evaluatedHead` 与证据 `head` 一致；证据 `head` 与最新提交检查点一致；builder 工作项还必须已成功推送，且推送 SHA 与最新提交一致 |
 | 目标 | 已批准计划里的全部工作项都完成 |
 
 返回每个工作项的标准数、通过数、不通过数、无法判定数、未完成原因与时间戳，
 以及目标级结论。判定只读，不改变目标状态；接受或返工由 S3-06 的人工决定推进。
 
+验证阶段由 `startVerification` 开启：目标必须处于 `executing`，builder 工作项必须有活跃工作区与提交检查点。进入 `verifying` 后，证据采集、逐条判定与验证上下文构建才被允许；这样返工后若不重新采集证据，完成判定会因提交不匹配而阻塞。
+
 每次判定都追加 `verifier.completion_assessed`，失败结论同样留痕，避免"重跑到绿"覆盖历史。
 
 ```bash
+manner verify start --goal <goalId> --by verifier-1
 manner verify completion --goal <goalId> --by verifier-1
 ```
 
@@ -178,6 +181,8 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | --- | --- |
 | S3-01 只含目标、标准与差异 | `verification.test.ts` · 验证上下文只含目标、标准与差异，不含实现过程 |
 | S3-01 无工作区时拒绝 | `verification.test.ts` · 没有活跃工作区时不能构建验证上下文 |
+| 验证阶段入口 | `cli.test.ts` · CLI 可以从执行态进入验证态 |
+| 验证阶段守卫 | `verification.test.ts` · 执行阶段不能做验证动作 |
 | S3-02 证据含命令、环境、时间与哈希 | `evidence.test.ts` · 证据记录命令、环境、时间与哈希，他人可据此重跑 |
 | S3-02 无工作区时拒绝 | `evidence.test.ts` · 没有活跃工作区时不能采集证据 |
 | S3-03 覆盖全部标准并保留历史 | `verdicts.test.ts` · 逐条判定覆盖全部标准并保留历史 |
@@ -186,6 +191,7 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | S3-04 两级 DoD | `completion.test.ts` · 证据与逐条判定齐备时才判定完成 |
 | S3-04 不通过不得完成 | `completion.test.ts` · 有"不通过"或"无法判定"时不得完成，改判后以最新一次为准 |
 | S3-04 任一工作项未完成即阻塞目标 | `completion.test.ts` · 任一工作项缺证据或缺判定时目标不得完成 |
+| S3-04 证据时效 | `completion.test.ts` · 证据之后出现新提交时不得完成；返工后未重新采集证据不得完成 |
 | S3-05 视图汇总与可验收标注 | `acceptance-view.test.ts` · 验收视图汇总目标、差异、证据、风险与待决，并标注可验收 |
 | S3-05 未完成时列出阻塞原因 | `acceptance-view.test.ts` · 未完成时视图列出阻塞原因 |
 | S3-06 接受后完成并吊销授权 | `acceptance.test.ts` · 接受后目标完成、授权全部失效且不能再操作 |
@@ -205,10 +211,10 @@ manner acceptance decide --goal <goalId> --decision close --reason "需求取消
 | 证据来源 | 只重跑自检命令，不重新执行 Agent | 复杂验证由 S3-03 判定补充 |
 | 判定录入 | 由验证者（人或 Agent）产出 JSON 后写入，不在服务内自动调用模型 | S3-07 端到端可编排调用 |
 | 判定粒度 | 以标准文本为键，跨来源同文标准合并为一条 | 需要区分来源时改结构化 id |
-| 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | 由 S3-06 的人工验收决定推进 |
+| 完成判定 | 只读评估，不改变目标状态，也不自动进入验收 | 由 `verify start` 进入验证，再由 S3-06 的人工验收决定推进 |
 | 验收决定入口 | 只提供 CLI，需要人显式执行；没有推送通知或超时自动决定 | 需要时接 IM 卡片或工作流 |
-| 返工后的证据 | 返工只改状态，不清理旧证据与旧判定 | 判定按追加顺序保留，完成判定取最近一次 |
-| 证据时效 | 只要求存在证据，不校验证据是否对应最新 HEAD | 需要时在 S3-05 展示 HEAD 对比 |
+| 返工后的证据 | 旧证据与旧判定保留；新提交后必须重新采集证据，完成判定按 `evaluatedHead` 与最新提交核对 | 追加顺序保留，head 不匹配即阻塞 |
+| 证据时效 | 已绑定判定、证据、最新提交与推送 SHA；工作区中未提交的改动仍不纳入校验 | 需要时补工作区洁净度检查 |
 | 验收视图 | 单文件 HTML，无脚本；未跟踪文件的改动内容不展示 | 需要时内嵌完整差异或附件 |
 | 返工闭环 | 由测试串起 `builder run` / 验证 / 验收决定，CLI 仍是分步入口 | 需要时补一键脚本 |
 | 视图审计 | 只记录结论与生成时间，不保存 HTML 快照 | 需要归档时把文件纳入产物 |
