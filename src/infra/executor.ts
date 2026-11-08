@@ -8,6 +8,11 @@ export interface LocalExecutorOptions {
   maxOutputChars?: number;
 }
 
+function quoteForCmd(value: string): string {
+  if (value.length === 0) return '""';
+  return /[\s"&|<>^]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
 /**
  * 本地 CLI 执行器。
  *
@@ -58,7 +63,13 @@ export function createLocalExecutor(options: LocalExecutorOptions = {}): Executo
           });
         };
 
-        const child = spawn(request.command, request.args ?? [], {
+        // Windows 的 .cmd/.bat 不能直接 spawn，需要交给 cmd.exe；其他命令保持原样。
+        const batch = process.platform === 'win32' && /\.(cmd|bat)$/i.test(request.command);
+        const command = batch ? process.env.ComSpec ?? 'cmd.exe' : request.command;
+        const args = batch
+          ? ['/d', '/s', '/c', [request.command, ...(request.args ?? [])].map(quoteForCmd).join(' ')]
+          : request.args ?? [];
+        const child = spawn(command, args, {
           cwd: request.cwd,
           env: { ...process.env, ...request.env },
           stdio: ['pipe', 'pipe', 'pipe'],

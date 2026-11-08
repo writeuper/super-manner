@@ -144,12 +144,14 @@ export function detectSelfChecks(workspacePath: string): SelfCheckSpec[] {
   }
 
   const packageManager = existsSync(join(workspacePath, 'pnpm-lock.yaml')) ? 'pnpm' : 'npm';
+  // Windows 上 npm/pnpm 是 .cmd，直接 spawn 名称会 ENOENT，需要带扩展名。
+  const command = process.platform === 'win32' ? `${packageManager}.cmd` : packageManager;
   const checks: SelfCheckSpec[] = [];
   if (scripts.typecheck) {
-    checks.push({ name: 'typecheck', command: packageManager, args: ['run', 'typecheck'] });
+    checks.push({ name: 'typecheck', command, args: ['run', 'typecheck'] });
   }
   if (scripts.test) {
-    checks.push({ name: 'test', command: packageManager, args: ['run', 'test'] });
+    checks.push({ name: 'test', command, args: ['run', 'test'] });
   }
   return checks;
 }

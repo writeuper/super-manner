@@ -1,11 +1,23 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createLocalExecutor } from '../src/infra/executor.ts';
 
 const executor = createLocalExecutor({ defaultTimeoutMs: 5000 });
+
+test('Windows 批处理命令通过 cmd 启动', { skip: process.platform !== 'win32' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'manner-cmd-'));
+  const script = join(dir, 'hello.cmd');
+  writeFileSync(script, '@echo off\r\necho batch-ok\r\n', 'utf8');
+
+  const result = await executor.run({ command: script, timeoutMs: 5000 });
+  rmSync(dir, { recursive: true, force: true });
+
+  assert.equal(result.status, 'succeeded');
+  assert.match(result.stdout, /batch-ok/);
+});
 
 test('成功命令返回 stdout 与退出码', async () => {
   const result = await executor.run({

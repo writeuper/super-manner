@@ -427,14 +427,16 @@ test('自检命令按 package.json 与锁文件探测', () => {
     join(dir, 'package.json'),
     JSON.stringify({ scripts: { typecheck: 'tsc --noEmit', test: 'node --test', lint: 'eslint .' } }),
   );
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   assert.deepEqual(detectSelfChecks(dir), [
-    { name: 'typecheck', command: 'npm', args: ['run', 'typecheck'] },
-    { name: 'test', command: 'npm', args: ['run', 'test'] },
+    { name: 'typecheck', command: npm, args: ['run', 'typecheck'] },
+    { name: 'test', command: npm, args: ['run', 'test'] },
   ]);
 
   writeFileSync(join(dir, 'pnpm-lock.yaml'), '');
+  const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
   assert.deepEqual(
     detectSelfChecks(dir).map((check) => check.command),
-    ['pnpm', 'pnpm'],
+    [pnpm, pnpm],
   );
 });
