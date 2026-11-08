@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { runBuilder } from '../src/app/builder.ts';
 import { commitWorkspace } from '../src/app/delivery.ts';
+import { collectEvidence } from '../src/app/evidence.ts';
 import { getGoalOrThrow, setGoalStatus } from '../src/app/goals.ts';
+import { recordVerdicts } from '../src/app/verdicts.ts';
 import { buildVerifierContext, startVerification } from '../src/app/verification.ts';
 import type { Executor, ExecutorRequest, ExecutorResult } from '../src/domain/executor.ts';
 import { listAuditEvents } from '../src/infra/audit.ts';
@@ -97,5 +99,28 @@ test('没有活跃工作区时不能构建验证上下文', () => {
   assert.throws(
     () => buildVerifierContext(db, { goalId: goal.id, workItemId: 'build' }),
     /没有活跃工作区/,
+  );
+});
+
+test('执行阶段不能做验证动作', async () => {
+  const { db, goal } = setupApproved();
+
+  await assert.rejects(
+    () =>
+      collectEvidence(db, {
+        goalId: goal.id,
+        workItemId: 'build',
+        executor: new FakeExecutor(),
+        checks: [],
+      }),
+    /不能采集证据/,
+  );
+  assert.throws(
+    () => buildVerifierContext(db, { goalId: goal.id, workItemId: 'build' }),
+    /不能构建验证上下文/,
+  );
+  assert.throws(
+    () => recordVerdicts(db, { goalId: goal.id, workItemId: 'build', verdicts: [] }),
+    /不能记录判定/,
   );
 });
