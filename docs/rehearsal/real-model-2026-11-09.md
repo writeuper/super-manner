@@ -2,9 +2,9 @@
 
 > 结论：真实模型 `ali/deepseek-v4.1-flash-1017` 已通过 Codex CLI 与 4090 网关完成一次 Builder 执行：只修改 `README.md`、自检 1/1 通过、提交并推送。随后在同一分支完成验证、判定、验收与复盘，35 条审计事件校验通过。
 >
-> 模型变更：本次记录最初使用 `deepseek-flash` 跑过一次（旧沙箱 PR #2）；按指定模型替换为 `ali/deepseek-v4.1-flash-1017` 后重跑，以下以最终运行为准。旧 PR 标记为被替换。
+> 模型变更：本次记录最初使用 `deepseek-flash` 跑过一次（旧沙箱 PR #2）；按指定模型替换为 `ali/deepseek-v4.1-flash-1017` 后重跑，以下以最终运行为准。旧 PR #2 已关闭。
 >
-> 边界：沙箱 PR #3 的创建在 GitHub 网页表单上遇到临时限流，分支已推送；验证判定由操作者依据独立验证上下文与证据逐条给出，不是独立 Verifier 模型。生产级 OS 隔离仍未实现。
+> 边界：沙箱 PR #3 已创建并合并（merge commit `01c2839`）；验证判定由操作者依据独立验证上下文与证据逐条给出，不是独立 Verifier 模型。生产级 OS 隔离仍未实现。
 
 ## 1. 环境与边界
 
@@ -88,20 +88,17 @@ acceptance.view_built 1 · acceptance.decided 1 · review.generated 1
 | 自检与证据 | 真实：`npm run test` 在工作区重跑并记录哈希 |
 | 验证判定 | 操作者依据独立上下文逐条给出，非独立 Verifier 模型 |
 | 验收决定 | 以 `human-1` 记录，由本次操作者模拟人工验收 |
-| 沙箱 PR #3 | 分支已推送；GitHub 网页表单创建 PR 时被临时限流，待重试 |
-| 旧沙箱 PR #2 | `deepseek-flash` 首次记录，已被本次模型替换取代 |
+| 沙箱 PR #3 | 已创建并合并：PR #3，merge commit `01c2839`；`main` 已包含 ali 记录 |
+| 旧沙箱 PR #2 | `deepseek-flash` 首次记录，已关闭并标记 superseded |
 | 生产发布 | 未执行；P0 明确排除自动发布 |
 
 ## 7. 遗留
 
-1. **沙箱 PR #3 待创建**：分支 `feature/sm-223deb44-build` 已推送，比较页为
-   `https://github.com/writeuper/super-manner-e2e/compare/main...feature/sm-223deb44-build?expand=1`。
-   GitHub 网页表单连续返回 “You can't perform that action at this time”，需要等限流恢复或使用 `gh`/API 创建。
-2. **旧 PR #2**：`deepseek-flash` 首次记录，应关闭或标记 superseded。
-3. **代码分支未合并**：本次运行基于 `feature/p0-closure`，该分支仍未合入 `main`。
-4. **单仓库、单目标**：未覆盖跨仓库、多工作项并行与冲突处理。
-5. **隔离边界**：super-manner 目前提供 worktree 与动作授权，不是 OS 级沙箱；生产环境仍需专用执行账户或容器隔离。
-6. **Token 记账**：Builder 运行时以 `--tokens 0` 启动，运行结束后从 Codex 输出解析 2,299 并补记 `budget.consumed`。
+1. **PR 状态**：沙箱 PR #3 已创建并合并（`main` @ `01c2839`）；旧 PR #2 已关闭并标记 superseded。
+2. **代码分支未合并**：本次运行基于 `feature/p0-closure`，该分支仍未合入 `main`。
+3. **单仓库、单目标**：未覆盖跨仓库、多工作项并行与冲突处理。
+4. **隔离边界**：super-manner 目前提供 worktree 与动作授权，不是 OS 级沙箱；生产环境仍需专用执行账户或容器隔离。
+5. **Token 记账**：Builder 运行时以 `--tokens 0` 启动，运行结束后从 Codex 输出解析 2,299 并补记 `budget.consumed`。
 
 ## 8. 复现路径
 
